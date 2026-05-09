@@ -1,0 +1,205 @@
+// schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Accounts & Users
+// ---------------------------------------------------------------------------
+
+enum PlanType {
+  FREE
+  PAID
+}
+
+model Company {
+  id               String   @id @default(cuid())
+  name             String
+  plan             PlanType @default(FREE)
+  stripeCustomerId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  users            User[]
+  jobs             Job[]
+  notes            Note[]
+  files            File[]
+  tasks            Task[]
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id             String   @id @default(cuid())
+  companyId      String
+  email          String?  @unique // Nullable to support SMS invites
+  phone          String?  @unique
+  name           String
+  role           Role     @default(MEMBER)
+  hashedPassword String?
+
+  company        Company  @relation(fields: [companyId], references: [id])
+  
+  jobsCreated    Job[]
+  notes          Note[]
+  files          File[]
+  tasksCreated   Task[]
+  tasksAssigned  Task[]   @relation("AssignedTasks")
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+enum JobStatus {
+  DESIGN
+  ACTIVE      // "N Days Left" will be calculated dynamically if targetCompletionDate is set
+  DELAY
+  PUNCH_LIST
+  COMPLETE
+}
+
+model Job {
+  id                   String    @id @default(cuid())
+  companyId            String
+  title                String
+  jobNumber            String?
+  poNumber             String?
+  contractNumber       String?
+  customerName         String?
+  address              String?
+  contactName          String?
+  contactPhone         String?
+  contactEmail         String?
+  status               JobStatus @default(ACTIVE)
+  priority             Int       @default(3) // 1-5 scale
+  targetCompletionDate DateTime?
+  description          String?
+  
+  createdById          String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  company              Company   @relation(fields: [companyId], references: [id])
+  createdBy            User      @relation(fields: [createdById], references: [id])
+  
+  notes                Note[]
+  files                File[]
+  tasks                Task[]
+}
+
+// ---------------------------------------------------------------------------
+// Notes & Progress Logs
+// ---------------------------------------------------------------------------
+
+enum NoteType {
+  GENERAL
+  PROGRESS
+}
+
+model Note {
+  id          String   @id @default(cuid())
+  companyId   String
+  jobId       String?  // If NULL, this is an Inbox Item
+  authorId    String
+  type        NoteType @default(GENERAL)
+  content     String
+  category    String?  // e.g., "Material issue", "Customer conversation"
+  
+  statusTag   String?  // Used for Progress logs
+
+  createdAt   DateTime @default(now()) // Can be set by client for offline captures
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+  job         Job?     @relation(fields: [jobId], references: [id])
+  author      User     @relation(fields: [authorId], references: [id])
+  
+  files       File[]   @relation("NoteFiles")
+}
+
+// ---------------------------------------------------------------------------
+// Photos & Files
+// ---------------------------------------------------------------------------
+
+enum FileType {
+  PHOTO
+  DOCUMENT
+}
+
+model File {
+  id                   String   @id @default(cuid())
+  companyId            String
+  jobId                String?  // If NULL, this is an Inbox Item
+  uploaderId           String
+  type                 FileType
+  url                  String
+  originalName         String
+  name                 String?  // Edited or AI-suggested
+  category             String?  // Edited or AI-suggested
+  
+  // AI Metadata
+  aiSuggestedName      String?
+  aiSuggestedCategory  String?
+
+  noteId               String?
+  taskId               String?
+
+  createdAt            DateTime @default(now()) // Can be set by client for offline captures
+  updatedAt            DateTime @updatedAt
+
+  company              Company  @relation(fields: [companyId], references: [id])
+  job                  Job?     @relation(fields: [jobId], references: [id])
+  uploader             User     @relation(fields: [uploaderId], references: [id])
+  note                 Note?    @relation("NoteFiles", fields: [noteId], references: [id])
+  task                 Task?    @relation("TaskFiles", fields: [taskId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Tasks & Punch List
+// ---------------------------------------------------------------------------
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskType {
+  TASK
+  PUNCH_LIST
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  companyId    String
+  jobId        String
+  title        String
+  description  String?
+  status       TaskStatus @default(OPEN)
+  type         TaskType   @default(TASK)
+  priority     Int?
+  dueDate      DateTime?
+  
+  createdById  String
+  assignedToId String?
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  company      Company    @relation(fields: [companyId], references: [id])
+  job          Job        @relation(fields: [jobId], references: [id])
+  createdBy    User       @relation(fields: [createdById], references: [id])
+  assignedTo   User?      @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  
+  files        File[]     @relation("TaskFiles")
+}
