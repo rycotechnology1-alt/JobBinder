@@ -12,6 +12,8 @@ This document is designed for the next developer or AI agent picking up this rep
 *   **Core UI:** A premium, dark-mode glassmorphism aesthetic inspired by QuoteToSpec is implemented using Tailwind v4.
 *   **Data Loops:** You can create Jobs, add Notes, and log Progress directly from the UI to the database. These instantly populate the Job Folder activity feed.
 *   **Inbox API:** You can post unassigned notes directly to the Unsorted Inbox.
+*   **Tasks & Punch Lists:** The Job Folder Tasks tab displays task and punch-list sections, supports quick-add task/punch-list creation, and lets users move work from `OPEN` to `IN_PROGRESS` to `DONE` with a reopen action for mistakes.
+*   **Account Menu:** The top-right account circle opens an account menu with user identity, Team Settings, and an explicit Sign out button instead of signing out immediately.
 
 **The "Mock" Elements (Needs Replacement):**
 *   **Dashboard Search/Filters:** The search bar and dropdowns on the Dashboard are currently static visual placeholders.
@@ -48,10 +50,10 @@ The Inbox successfully displays unassigned notes/files, but they are trapped the
 - [ ] **Move to Job API:** Create a `PATCH /api/notes` (and files) route to attach a `jobId` to the item, effectively moving it out of the inbox and into the Job Folder.
 
 ### Phase 5: Tasks & Punch Lists
-The database supports Tasks, and the `POST /api/tasks` endpoint is written, but there is no UI.
-- [ ] **Task List UI:** Build the UI inside the Job Folder (under the Tasks tab) to view open and completed tasks.
-- [ ] **Create Task UI:** Build a "Quick Add Task/Punch List" modal.
-- [ ] **Status Toggles:** Allow users to click a task to mark it as `IN_PROGRESS` or `DONE`.
+The database supports Tasks, and the Job Folder now has a working task/punch-list workflow.
+- [x] **Task List UI:** Build the UI inside the Job Folder (under the Tasks tab) to view task and punch-list sections with incomplete and completed items.
+- [x] **Create Task UI:** Build a "Quick Add Task/Punch List" modal.
+- [x] **Status Toggles:** Allow users to move a task from `OPEN` to `IN_PROGRESS` to `DONE`, with a reopen action back to `OPEN`.
 
 ### Phase 6: Search & Filtering
 - [ ] **Dashboard Search:** Make the search bar functional so users can filter jobs by Title, Customer, PO Number, or Job Number.

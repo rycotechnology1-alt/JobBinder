@@ -1,1 +1,1 @@
-When the user selects their account tag, Top right of screen circle with their initial, the user is directd back to sign in and needs to generate a new magic link to return to the tool.
+No current bugs tracked.

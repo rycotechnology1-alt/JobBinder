@@ -2,6 +2,7 @@ import Link from "next/link";
 import { HardHat } from "lucide-react";
 import { signOut } from "@/auth";
 import { getCurrentAppUser } from "@/lib/current-user";
+import { AccountMenu } from "@/components/AccountMenu";
 import { NavLinks } from "@/components/NavLinks";
 
 export async function Navbar() {
@@ -29,15 +30,12 @@ export async function Navbar() {
           {user?.companyId && <NavLinks />}
           
           {user ? (
-            <form action={handleSignOut}>
-              <button
-                type="submit"
-                className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-semibold text-zinc-300 hover:border-brand/60 transition-colors"
-                title="Sign out"
-              >
-                {(user.name ?? user.email ?? "U").charAt(0).toUpperCase()}
-              </button>
-            </form>
+            <AccountMenu
+              displayName={user.name ?? user.email ?? "User"}
+              email={user.email ?? null}
+              hasCompany={Boolean(user.companyId)}
+              signOutAction={handleSignOut}
+            />
           ) : (
             <Link href="/sign-in" className="text-sm font-medium text-zinc-400 hover:text-brand">
               Sign in
