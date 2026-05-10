@@ -54,6 +54,16 @@ const tasks = [
   },
   {
     id: "task-2",
+    title: "Finish caulk line",
+    description: null,
+    status: "IN_PROGRESS" as const,
+    type: "PUNCH_LIST" as const,
+    priority: null,
+    dueDate: null,
+    createdAt: "2026-05-08T12:00:00.000Z",
+  },
+  {
+    id: "task-3",
     title: "Submit permit closeout",
     description: null,
     status: "DONE" as const,
@@ -71,7 +81,7 @@ describe("JobFolderTabs", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ id: "task-1", status: "DONE" }),
+        json: async () => ({ id: "task-1", status: "IN_PROGRESS" }),
       }),
     );
   });
@@ -97,33 +107,60 @@ describe("JobFolderTabs", () => {
     expect(screen.queryByText("before.jpg")).toBeNull();
   });
 
-  it("keeps completed tasks separate and lowers the tab count when one is completed", async () => {
+  it("separates tasks from punch list items and progresses statuses optimistically", async () => {
     const user = userEvent.setup();
     render(<JobFolderTabs notes={[]} files={files} tasks={tasks} />);
 
-    await user.click(screen.getByRole("button", { name: "Tasks (1)" }));
-    expect(screen.getByRole("heading", { name: "Open Tasks" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Completed" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
+    expect(screen.getByRole("heading", { name: "Tasks" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Punch List" })).toBeTruthy();
 
-    const openSection = screen.getByTestId("open-tasks");
-    const completedSection = screen.getByTestId("completed-tasks");
-    expect(within(openSection).getByText("Install trim")).toBeTruthy();
-    expect(within(completedSection).getByText("Submit permit closeout")).toBeTruthy();
+    const tasksSection = screen.getByTestId("tasks-section");
+    const punchListSection = screen.getByTestId("punch-list-section");
+    expect(within(tasksSection).getByText("Install trim")).toBeTruthy();
+    expect(within(punchListSection).getByText("Finish caulk line")).toBeTruthy();
+    expect(within(punchListSection).getByText("Submit permit closeout")).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Mark Install trim complete" }));
+    await user.click(screen.getByRole("button", { name: "Start Install trim" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Tasks (0)" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Tasks (2)" })).toBeTruthy();
     });
-    expect(within(completedSection).getByText("Install trim")).toBeTruthy();
     expect(fetch).toHaveBeenCalledWith(
       "/api/tasks",
       expect.objectContaining({
         method: "PATCH",
-        body: JSON.stringify({ id: "task-1", status: "DONE" }),
+        body: JSON.stringify({ id: "task-1", status: "IN_PROGRESS" }),
       }),
     );
-    expect(refresh).toHaveBeenCalledOnce();
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: "task-1", status: "DONE" }),
+    } as Response);
+
+    await user.click(screen.getByRole("button", { name: "Mark Install trim complete" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Tasks (1)" })).toBeTruthy();
+    });
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: "task-3", status: "OPEN" }),
+    } as Response);
+
+    await user.click(screen.getByRole("button", { name: "Reopen Submit permit closeout" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Tasks (2)" })).toBeTruthy();
+    });
+    expect(fetch).toHaveBeenLastCalledWith(
+      "/api/tasks",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ id: "task-3", status: "OPEN" }),
+      }),
+    );
+    expect(refresh).toHaveBeenCalledTimes(3);
   });
 
   it("reflects newly refreshed task props without a full page reload", async () => {

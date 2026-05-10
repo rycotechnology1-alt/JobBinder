@@ -30,7 +30,12 @@ export function Modal({ isOpen, onClose, title, children, className }: ModalProp
         className="absolute inset-0" 
         onClick={onClose}
       />
-      <div className={cn("glass relative w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]", className)}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={cn("glass relative w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]", className)}
+      >
         <div className="flex items-center justify-between p-6 border-b border-zinc-800/50">
           <h2 className="text-xl font-semibold text-zinc-50">{title}</h2>
           <button

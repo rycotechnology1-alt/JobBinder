@@ -122,6 +122,7 @@ enum JobStatus {
   ACTIVE      // "N Days Left" will be calculated dynamically if targetCompletionDate is set
   DELAY
   PUNCH_LIST
+  FINAL_BILL_SUBMITTED
   COMPLETE
 }
 
