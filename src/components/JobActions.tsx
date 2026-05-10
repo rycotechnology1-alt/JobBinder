@@ -9,11 +9,9 @@ import { Camera, ClipboardList, FileText } from "lucide-react";
 
 interface Props {
   jobId: string;
-  companyId: string;
-  authorId: string;
 }
 
-export function JobActions({ jobId, companyId, authorId }: Props) {
+export function JobActions({ jobId }: Props) {
   const [activeModal, setActiveModal] = useState<"NONE" | "NOTE" | "PROGRESS" | "PHOTO">("NONE");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
@@ -29,9 +27,7 @@ export function JobActions({ jobId, companyId, authorId }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyId,
           jobId,
-          authorId,
           type: activeModal === "PROGRESS" ? "PROGRESS" : "GENERAL",
           content,
           statusTag: activeModal === "PROGRESS" ? formData.get("statusTag") : undefined,
@@ -113,7 +109,7 @@ export function JobActions({ jobId, companyId, authorId }: Props) {
         <div className="py-8 text-center text-zinc-400">
           <Camera size={48} className="mx-auto mb-4 opacity-50" />
           <p>Cloudflare R2 integration pending.</p>
-          <p className="text-sm mt-2">For MVP Step 8, let's test the Note creation first!</p>
+          <p className="text-sm mt-2">Photo upload will come after authenticated access.</p>
         </div>
       </Modal>
     </>

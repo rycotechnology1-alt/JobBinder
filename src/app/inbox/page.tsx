@@ -4,20 +4,18 @@ import { Button } from "@/components/ui/Button";
 import { InboxIcon, FileIcon, FileText } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { SimulateCaptureButton } from "@/components/SimulateCaptureButton";
+import { requirePageCompanyUser } from "@/lib/current-user";
 
 export default async function InboxPage() {
-  const company = await prisma.company.findFirst({
-    include: { users: true }
-  });
-  if (!company) return <div>No company found</div>;
+  const user = await requirePageCompanyUser();
 
   const [notes, files] = await Promise.all([
     prisma.note.findMany({
-      where: { companyId: company.id, jobId: null },
+      where: { companyId: user.companyId, jobId: null },
       orderBy: { createdAt: "desc" },
     }),
     prisma.file.findMany({
-      where: { companyId: company.id, jobId: null },
+      where: { companyId: user.companyId, jobId: null },
       orderBy: { createdAt: "desc" },
     })
   ]);
@@ -33,7 +31,7 @@ export default async function InboxPage() {
           </h1>
           <p className="text-sm text-zinc-400 mt-1">Review fast captures and organize them into job folders.</p>
         </div>
-        <SimulateCaptureButton companyId={company.id} authorId={company.users[0]?.id || "default"} />
+        <SimulateCaptureButton />
       </div>
 
       {!hasItems ? (

@@ -1,12 +1,17 @@
-"use client";
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { HardHat, Inbox } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { HardHat } from "lucide-react";
+import { signOut } from "@/auth";
+import { getCurrentAppUser } from "@/lib/current-user";
+import { NavLinks } from "@/components/NavLinks";
 
-export function Navbar() {
-  const pathname = usePathname();
+export async function Navbar() {
+  const user = await getCurrentAppUser();
+
+  async function handleSignOut() {
+    "use server";
+
+    await signOut({ redirectTo: "/sign-in" });
+  }
 
   return (
     <nav className="sticky top-0 z-40 w-full glass border-b-0 border-zinc-800/50">
@@ -20,26 +25,24 @@ export function Navbar() {
           <span className="font-bold text-lg tracking-tight text-zinc-50">JobBinder</span>
         </Link>
 
-        {/* Links */}
         <div className="flex items-center gap-6">
-          <Link 
-            href="/inbox" 
-            className={cn(
-              "flex items-center gap-2 text-sm font-medium transition-colors hover:text-brand",
-              pathname === "/inbox" ? "text-brand" : "text-zinc-400"
-            )}
-          >
-            <div className="relative">
-              <Inbox size={20} />
-              {/* Optional: Add a red dot if there are unread items */}
-            </div>
-            <span className="hidden md:inline">Inbox</span>
-          </Link>
+          {user?.companyId && <NavLinks />}
           
-          {/* User Avatar Placeholder */}
-          <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-semibold text-zinc-300">
-            D
-          </div>
+          {user ? (
+            <form action={handleSignOut}>
+              <button
+                type="submit"
+                className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-semibold text-zinc-300 hover:border-brand/60 transition-colors"
+                title="Sign out"
+              >
+                {(user.name ?? user.email ?? "U").charAt(0).toUpperCase()}
+              </button>
+            </form>
+          ) : (
+            <Link href="/sign-in" className="text-sm font-medium text-zinc-400 hover:text-brand">
+              Sign in
+            </Link>
+          )}
         </div>
 
       </div>

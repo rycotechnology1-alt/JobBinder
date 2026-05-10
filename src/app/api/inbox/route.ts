@@ -1,24 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import {
+  accessErrorResponse,
+  requireCompanyUser,
+} from "@/lib/current-user";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(req.url);
-    const companyId = searchParams.get("companyId");
-
-    if (!companyId) {
-      return NextResponse.json({ error: "Missing companyId" }, { status: 400 });
-    }
+    const user = await requireCompanyUser();
 
     // Fetch notes and files where jobId is null
     const [notes, files] = await Promise.all([
       prisma.note.findMany({
-        where: { companyId, jobId: null },
+        where: { companyId: user.companyId, jobId: null },
         orderBy: { createdAt: "desc" },
         include: { author: { select: { name: true } } }
       }),
       prisma.file.findMany({
-        where: { companyId, jobId: null },
+        where: { companyId: user.companyId, jobId: null },
         orderBy: { createdAt: "desc" },
         include: { uploader: { select: { name: true } } }
       })
@@ -26,6 +25,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ notes, files });
   } catch (error) {
+    const authResponse = accessErrorResponse(error);
+    if (authResponse) return authResponse;
+
     console.error("Error fetching inbox:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

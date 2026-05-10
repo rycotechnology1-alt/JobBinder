@@ -7,13 +7,13 @@ This document is designed for the next developer or AI agent picking up this rep
 ## 🏗️ Current State of the Repo
 
 **What is fully functioning:**
-*   **Database (Neon/Prisma):** The complete schema is deployed. It supports Companies, Users, Jobs, Notes (General/Progress), Files, and Tasks.
+*   **Database (Neon/Prisma):** The complete schema is deployed. It supports Companies, Users, Auth.js sessions/tokens, Invites, Jobs, Notes (General/Progress), Files, and Tasks.
+*   **Auth & Access:** Auth.js / NextAuth magic-link sign-in is wired through Resend. Users without a company complete onboarding, admins can invite crew from Team Settings, and API routes derive company/user access from the session.
 *   **Core UI:** A premium, dark-mode glassmorphism aesthetic inspired by QuoteToSpec is implemented using Tailwind v4.
 *   **Data Loops:** You can create Jobs, add Notes, and log Progress directly from the UI to the database. These instantly populate the Job Folder activity feed.
 *   **Inbox API:** You can post unassigned notes directly to the Unsorted Inbox.
 
 **The "Mock" Elements (Needs Replacement):**
-*   **Auth:** We currently bypass authentication by querying `prisma.company.findFirst()`. 
 *   **Dashboard Search/Filters:** The search bar and dropdowns on the Dashboard are currently static visual placeholders.
 
 ---
@@ -24,14 +24,14 @@ To achieve 100% feature parity with the MVP Product Brief, complete the followin
 
 ### Phase 1: Authentication & Access
 The product assumes a small 1-5 person crew. We need real users before we can assign tasks or trace notes to specific employees.
-- [ ] **Implement NextAuth (or Clerk):** Replace the mocked `findFirst` database calls with real session tokens.
-- [ ] **Build the Team Settings UI:** Create a page where Admins can view their crew.
-- [ ] **Wire the Invite System:** Connect the UI to the existing `POST /api/users/invite` Resend route so Admins can invite new crew members via email.
+- [x] **Implement NextAuth/Auth.js:** Replace the mocked `findFirst` database calls with real session tokens.
+- [x] **Build the Team Settings UI:** Create a page where Admins can view their crew.
+- [x] **Wire the Invite System:** Connect the UI to `POST /api/users/invite` so Admins can invite new crew members via email magic links.
 
 ### Phase 2: Cloudflare R2 Uploads & Asset Categories
 This is a critical field feature. The backend API for generating presigned URLs (`/api/files/upload-url`) already exists. The database also supports `category` fields for `Note` and `File`.
 - [ ] **Client-Side Compression:** Implement `browser-image-compression` on the frontend before uploading (to save R2 bandwidth for the Free Tier).
-- [ ] **Upload UI & Categorization:** Replace the placeholder "Add Photo" modal in the Job Folder with a working file selector. This modal must include a dropdown to select a **Category** (e.g., Before, During, After, Issue, Material, Inspection) so items are grouped logically, preventing a chaotic dump of files.
+- [ ] **Upload UI & Categorization:** The user is able to upload photos and files that are stored inside of an organized system that we build based on the following categories, (Before, during, after, Issue, Material, Inspection, Damage, Completed Work, Punch List, Plans, Permits, Quotes, Invoices, Receipts, Cut Sheets, Inspection documents, Customer documents, Misc.) We do not need to create separate folders for each category but it should be very simple for a user to select a category or categories and only see the information relevant to that filtering. 
 - [ ] **Feed Display & Filtering:** Update the Job Folder to display uploaded photos and PDFs. Add "Buckets" or filter tabs so users can quickly sort the Feed by these categories (e.g., view only "Inspection" photos or "Material issue" notes).
 
 ### Phase 3: Job Management & Editing

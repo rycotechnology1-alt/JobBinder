@@ -1,20 +1,23 @@
 import { notFound } from "next/navigation";
 import prisma from "@/lib/prisma";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { MapPin, Phone, User, CalendarClock, ArrowLeft } from "lucide-react";
+import { MapPin, Phone, User, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { JobActions } from "@/components/JobActions";
+import { requirePageCompanyUser } from "@/lib/current-user";
 
 export default async function JobFolder({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const user = await requirePageCompanyUser();
 
-  const job = await prisma.job.findUnique({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: { id, companyId: user.companyId },
     include: {
-      company: { include: { users: true } },
-      notes: { orderBy: { createdAt: "desc" } },
+      notes: {
+        orderBy: { createdAt: "desc" },
+        include: { author: { select: { name: true, email: true } } },
+      },
       files: { orderBy: { createdAt: "desc" } },
       tasks: { orderBy: { createdAt: "desc" } }
     }
@@ -90,11 +93,7 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
         {/* Right Column: Feed */}
         <div className="lg:col-span-2 space-y-6">
           
-          <JobActions 
-            jobId={job.id} 
-            companyId={job.companyId} 
-            authorId={job.company?.users?.[0]?.id || "default"} 
-          />
+          <JobActions jobId={job.id} />
 
           <Card>
             <CardContent className="p-0">
@@ -116,7 +115,9 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
                         </div>
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium text-sm text-zinc-200">User</span>
+                            <span className="font-medium text-sm text-zinc-200">
+                              {note.author.name ?? note.author.email ?? "User"}
+                            </span>
                             <span className="text-xs text-zinc-500">{new Date(note.createdAt).toLocaleDateString()}</span>
                             {note.type === "PROGRESS" && (
                               <Badge variant="success" className="scale-75 origin-left">Progress</Badge>

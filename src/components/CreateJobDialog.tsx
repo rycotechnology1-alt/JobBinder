@@ -8,12 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Plus } from "lucide-react";
 
-interface Props {
-  companyId: string;
-  userId: string;
-}
-
-export function CreateJobDialog({ companyId, userId }: Props) {
+export function CreateJobDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
@@ -31,10 +26,8 @@ export function CreateJobDialog({ companyId, userId }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyId,
           title,
           customerName,
-          createdById: userId,
         }),
       });
       

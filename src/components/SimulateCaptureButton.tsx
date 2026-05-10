@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Zap } from "lucide-react";
 
-export function SimulateCaptureButton({ companyId, authorId }: { companyId: string, authorId: string }) {
+export function SimulateCaptureButton() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
@@ -17,8 +17,6 @@ export function SimulateCaptureButton({ companyId, authorId }: { companyId: stri
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyId,
-          authorId,
           type: "GENERAL",
           content: "Fast offline capture from the field! Needs to be assigned.",
           // Deliberately omitting jobId so it goes to the inbox

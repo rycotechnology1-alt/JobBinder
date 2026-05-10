@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
+import {
+  accessErrorResponse,
+  requireCompanyUser,
+} from "@/lib/current-user";
 
 const s3Client = new S3Client({
   region: "auto",
@@ -14,6 +18,7 @@ const s3Client = new S3Client({
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await requireCompanyUser();
     const { filename, contentType } = await req.json();
 
     if (!filename || !contentType) {
@@ -23,7 +28,7 @@ export async function POST(req: NextRequest) {
     // Generate a unique key for the file
     const fileId = uuidv4();
     const extension = filename.split('.').pop();
-    const objectKey = `${fileId}.${extension}`;
+    const objectKey = `${user.companyId}/${fileId}.${extension}`;
 
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
@@ -46,6 +51,9 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
+    const authResponse = accessErrorResponse(error);
+    if (authResponse) return authResponse;
+
     console.error("Error generating presigned URL:", error);
     return NextResponse.json({ error: "Failed to generate upload URL" }, { status: 500 });
   }

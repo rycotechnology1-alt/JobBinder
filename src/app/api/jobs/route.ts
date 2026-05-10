@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { JobStatus } from "@prisma/client";
+import {
+  accessErrorResponse,
+  requireCompanyUser,
+} from "@/lib/current-user";
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await requireCompanyUser();
     const { searchParams } = new URL(req.url);
-    const companyId = searchParams.get("companyId");
     const status = searchParams.get("status") as JobStatus | null;
     const search = searchParams.get("search");
 
-    if (!companyId) {
-      return NextResponse.json({ error: "Missing companyId" }, { status: 400 });
-    }
-
     const jobs = await prisma.job.findMany({
       where: {
-        companyId,
+        companyId: user.companyId,
         ...(status ? { status } : {}),
         ...(search
           ? {
@@ -46,6 +46,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(jobs);
   } catch (error) {
+    const authResponse = accessErrorResponse(error);
+    if (authResponse) return authResponse;
+
     console.error("Error fetching jobs:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
@@ -53,18 +56,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await requireCompanyUser();
     const body = await req.json();
-    const { companyId, title, createdById, customerName, jobNumber, poNumber, address } = body;
+    const { title, customerName, jobNumber, poNumber, address } = body;
 
-    if (!companyId || !title || !createdById) {
+    if (!title) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
     const job = await prisma.job.create({
       data: {
-        companyId,
+        companyId: user.companyId,
         title,
-        createdById,
+        createdById: user.id,
         customerName,
         jobNumber,
         poNumber,
@@ -74,6 +78,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(job, { status: 201 });
   } catch (error) {
+    const authResponse = accessErrorResponse(error);
+    if (authResponse) return authResponse;
+
     console.error("Error creating job:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

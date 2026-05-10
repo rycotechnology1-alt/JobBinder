@@ -1,41 +1,19 @@
-import { Suspense } from "react";
 import prisma from "@/lib/prisma";
 import { Card, CardContent, CardFooter } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { Search, MapPin, HardHat } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
+import { requirePageCompanyUser } from "@/lib/current-user";
 
-// For MVP, we auto-create or use the first company
 async function getCompanyAndJobs() {
-  let company = await prisma.company.findFirst({
-    include: { users: true }
-  });
-  
-  if (!company) {
-    company = await prisma.company.create({
-      data: {
-        name: "Acme Construction",
-        plan: "FREE",
-        users: {
-          create: {
-            name: "Admin User",
-            email: "admin@acme.test",
-            role: "ADMIN"
-          }
-        }
-      },
-      include: { users: true }
-    });
-  }
-
+  const user = await requirePageCompanyUser();
   const jobs = await prisma.job.findMany({
-    where: { companyId: company.id },
+    where: { companyId: user.companyId },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
   });
 
-  return { company, jobs };
+  return { company: user.company, jobs };
 }
 
 export default async function Dashboard() {
@@ -72,7 +50,7 @@ export default async function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
         {/* Interactive Create New Job Component */}
-        <CreateJobDialog companyId={company.id} userId={company.users[0].id} />
+        <CreateJobDialog />
 
         {/* Existing Jobs wrapped in Link */}
         {jobs.map((job) => {
