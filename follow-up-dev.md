@@ -30,9 +30,9 @@ The product assumes a small 1-5 person crew. We need real users before we can as
 
 ### Phase 2: Cloudflare R2 Uploads & Asset Categories
 This is a critical field feature. The backend API for generating presigned URLs (`/api/files/upload-url`) already exists. The database also supports `category` fields for `Note` and `File`.
-- [ ] **Client-Side Compression:** Implement `browser-image-compression` on the frontend before uploading (to save R2 bandwidth for the Free Tier).
-- [ ] **Upload UI & Categorization:** The user is able to upload photos and files that are stored inside of an organized system that we build based on the following categories, (Before, during, after, Issue, Material, Inspection, Damage, Completed Work, Punch List, Plans, Permits, Quotes, Invoices, Receipts, Cut Sheets, Inspection documents, Customer documents, Misc.) We do not need to create separate folders for each category but it should be very simple for a user to select a category or categories and only see the information relevant to that filtering. 
-- [ ] **Feed Display & Filtering:** Update the Job Folder to display uploaded photos and PDFs. Add "Buckets" or filter tabs so users can quickly sort the Feed by these categories (e.g., view only "Inspection" photos or "Material issue" notes).
+- [x] **Client-Side Compression:** Implement `browser-image-compression` on the frontend before uploading (to save R2 bandwidth for the Free Tier).
+- [x] **Upload UI & Categorization:** The user is able to upload photos and files that are stored inside of an organized system that we build based on the following categories, (Before, during, after, Issue, Material, Inspection, Damage, Completed Work, Punch List, Plans, Permits, Quotes, Invoices, Receipts, Cut Sheets, Inspection documents, Customer documents, Misc.) We do not need to create separate folders for each category but it should be very simple for a user to select a category or categories and only see the information relevant to that filtering. 
+- [x] **Feed Display & Filtering:** Update the Job Folder to display uploaded photos and PDFs. Add "Buckets" or filter tabs so users can quickly sort the Feed by these categories (e.g., view only "Inspection" photos or "Material issue" notes).
 
 ### Phase 3: Job Management & Editing
 Right now, you can only create a Job with a Title and Customer Name.

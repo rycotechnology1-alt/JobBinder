@@ -1,20 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { v4 as uuidv4 } from "uuid";
 import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
-
-const s3Client = new S3Client({
-  region: "auto",
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
-  },
-});
+import { getFileTypeForMime } from "@/lib/asset-categories";
+import { createR2ObjectKey, createSignedUploadUrl } from "@/lib/r2";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,29 +16,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing filename or contentType" }, { status: 400 });
     }
 
-    // Generate a unique key for the file
+    if (!getFileTypeForMime(contentType)) {
+      return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
+    }
+
     const fileId = uuidv4();
-    const extension = filename.split('.').pop();
-    const objectKey = `${user.companyId}/${fileId}.${extension}`;
-
-    const command = new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET_NAME,
-      Key: objectKey,
-      ContentType: contentType,
-    });
-
-    // URL expires in 15 minutes
-    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 });
-    
-    // The public URL where the file can be accessed after upload
-    // Requires a custom domain or R2.dev subdomain enabled on Cloudflare
-    const publicUrl = `https://pub-${process.env.R2_BUCKET_NAME}.r2.dev/${objectKey}`;
+    const objectKey = createR2ObjectKey(user.companyId, fileId, filename);
+    const uploadUrl = await createSignedUploadUrl({ objectKey, contentType });
 
     return NextResponse.json({
       uploadUrl,
       fileId,
       objectKey,
-      publicUrl,
     });
 
   } catch (error) {

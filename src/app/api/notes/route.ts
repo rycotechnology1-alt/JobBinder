@@ -5,6 +5,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { normalizeAssetCategory } from "@/lib/asset-categories";
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
         authorId: user.id,
         type: type as NoteType,
         content,
-        category,
+        category: normalizeAssetCategory(category),
         statusTag,
         // Allow client to pass historical capture time (offline support)
         ...(createdAt ? { createdAt: new Date(createdAt) } : {})

@@ -5,15 +5,22 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { isValidTaskStatus, isValidTaskType } from "@/lib/job-folder";
 
 export async function POST(req: NextRequest) {
   try {
     const user = await requireCompanyUser();
     const body = await req.json();
     const { jobId, title, description, type, dueDate, assignedToId } = body;
+    const normalizedTitle = typeof title === "string" ? title.trim() : "";
+    const normalizedType = type === undefined || type === null || type === "" ? "TASK" : type;
 
-    if (!jobId || !title) {
+    if (!jobId || !normalizedTitle) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    if (!isValidTaskType(normalizedType)) {
+      return NextResponse.json({ error: "Invalid task type" }, { status: 400 });
     }
 
     const job = await prisma.job.findFirst({
@@ -40,9 +47,9 @@ export async function POST(req: NextRequest) {
       data: {
         companyId: user.companyId,
         jobId,
-        title,
-        description,
-        type: type as TaskType || "TASK",
+        title: normalizedTitle,
+        description: typeof description === "string" && description.trim() ? description.trim() : null,
+        type: normalizedType as TaskType,
         dueDate: dueDate ? new Date(dueDate) : null,
         createdById: user.id,
         assignedToId,
@@ -67,6 +74,10 @@ export async function PATCH(req: NextRequest) {
 
     if (!id || !status) {
       return NextResponse.json({ error: "Missing id or status" }, { status: 400 });
+    }
+
+    if (!isValidTaskStatus(status)) {
+      return NextResponse.json({ error: "Invalid task status" }, { status: 400 });
     }
 
     const existingTask = await prisma.task.findFirst({

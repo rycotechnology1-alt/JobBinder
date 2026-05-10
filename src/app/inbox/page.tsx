@@ -5,6 +5,7 @@ import { InboxIcon, FileIcon, FileText } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { SimulateCaptureButton } from "@/components/SimulateCaptureButton";
 import { requirePageCompanyUser } from "@/lib/current-user";
+import { InboxUploadButton } from "@/components/InboxUploadButton";
 
 export default async function InboxPage() {
   const user = await requirePageCompanyUser();
@@ -31,7 +32,10 @@ export default async function InboxPage() {
           </h1>
           <p className="text-sm text-zinc-400 mt-1">Review fast captures and organize them into job folders.</p>
         </div>
-        <SimulateCaptureButton />
+        <div className="flex flex-col sm:flex-row gap-3">
+          <InboxUploadButton />
+          <SimulateCaptureButton />
+        </div>
       </div>
 
       {!hasItems ? (
@@ -69,8 +73,11 @@ export default async function InboxPage() {
                     <FileIcon size={20} className="text-zinc-400" />
                   </div>
                   <div>
-                    <p className="font-medium text-zinc-200">{file.originalName}</p>
-                    <p className="text-xs text-zinc-500">Uploaded {formatDistanceToNow(new Date(file.createdAt), { addSuffix: true })}</p>
+                    <p className="font-medium text-zinc-200">{file.name || file.originalName}</p>
+                    <p className="text-xs text-zinc-500">
+                      Uploaded {formatDistanceToNow(new Date(file.createdAt), { addSuffix: true })}
+                      {file.category ? ` - ${file.category}` : ""}
+                    </p>
                   </div>
                 </div>
                 <div className="flex gap-2">

@@ -6,21 +6,41 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Camera, ClipboardList, FileText } from "lucide-react";
+import { AssetCategorySelect } from "@/components/AssetCategorySelect";
+import { AssetUploadModal } from "@/components/AssetUploadModal";
 
 interface Props {
   jobId: string;
 }
 
 export function JobActions({ jobId }: Props) {
-  const [activeModal, setActiveModal] = useState<"NONE" | "NOTE" | "PROGRESS" | "PHOTO">("NONE");
+  const [activeModal, setActiveModal] = useState<"NONE" | "NOTE" | "PROGRESS" | "UPLOAD">("NONE");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createTaskFromNote, setCreateTaskFromNote] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const router = useRouter();
+
+  function closeModal() {
+    setActiveModal("NONE");
+    setCreateTaskFromNote(false);
+    setSubmitError(null);
+  }
 
   async function handleAddNote(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
-    const content = formData.get("content");
+    const content = formData.get("content")?.toString() || "";
+    const taskTitle = formData.get("taskTitle")?.toString().trim() || "";
+    const taskDescription = formData.get("taskDescription")?.toString().trim() || content;
+    const shouldCreateTask = activeModal === "NOTE" && createTaskFromNote;
+    setSubmitError(null);
+
+    if (shouldCreateTask && !taskTitle) {
+      setSubmitError("Task title is required.");
+      setIsSubmitting(false);
+      return;
+    }
     
     try {
       const res = await fetch("/api/notes", {
@@ -30,15 +50,39 @@ export function JobActions({ jobId }: Props) {
           jobId,
           type: activeModal === "PROGRESS" ? "PROGRESS" : "GENERAL",
           content,
+          category: formData.get("category"),
           statusTag: activeModal === "PROGRESS" ? formData.get("statusTag") : undefined,
         }),
       });
-      if (res.ok) {
-        setActiveModal("NONE");
-        router.refresh();
+
+      if (!res.ok) {
+        const payload = await res.json();
+        throw new Error(payload.error || "Could not save note.");
       }
+
+      if (shouldCreateTask) {
+        const taskRes = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId,
+            title: taskTitle,
+            description: taskDescription,
+            type: "TASK",
+          }),
+        });
+
+        if (!taskRes.ok) {
+          const payload = await taskRes.json();
+          throw new Error(payload.error || "Could not create task.");
+        }
+      }
+
+      closeModal();
+      router.refresh();
     } catch (error) {
       console.error(error);
+      setSubmitError(error instanceof Error ? error.message : "Could not save note.");
     } finally {
       setIsSubmitting(false);
     }
@@ -48,8 +92,8 @@ export function JobActions({ jobId }: Props) {
     <>
       {/* Desktop Buttons */}
       <div className="hidden md:flex justify-end gap-3 mb-4">
-        <Button variant="secondary" className="gap-2" onClick={() => setActiveModal("PHOTO")}>
-          <Camera size={16}/> Add Photo
+        <Button variant="secondary" className="gap-2" onClick={() => setActiveModal("UPLOAD")}>
+          <Camera size={16}/> Upload
         </Button>
         <Button variant="secondary" className="gap-2" onClick={() => setActiveModal("PROGRESS")}>
           <ClipboardList size={16}/> Log Progress
@@ -61,9 +105,9 @@ export function JobActions({ jobId }: Props) {
 
       {/* Mobile Buttons */}
       <div className="grid grid-cols-3 gap-3 md:hidden mb-6">
-        <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("PHOTO")}>
+        <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("UPLOAD")}>
           <Camera size={20} className="text-brand-light" />
-          Photo
+          Upload
         </Button>
         <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("PROGRESS")}>
           <ClipboardList size={20} className="text-emerald-400" />
@@ -75,19 +119,20 @@ export function JobActions({ jobId }: Props) {
         </Button>
       </div>
 
-      <Modal isOpen={activeModal === "NOTE" || activeModal === "PROGRESS"} onClose={() => setActiveModal("NONE")} title={activeModal === "PROGRESS" ? "Log Progress" : "Add Note"}>
+      <Modal isOpen={activeModal === "NOTE" || activeModal === "PROGRESS"} onClose={closeModal} title={activeModal === "PROGRESS" ? "Log Progress" : "Add Note"}>
         <form onSubmit={handleAddNote} className="space-y-4">
           {activeModal === "PROGRESS" && (
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Status Tag</label>
-              <Input name="statusTag" placeholder="e.g. Rough-in complete" />
+              <label htmlFor="statusTag" className="block text-sm font-medium text-zinc-400 mb-1">Status Tag</label>
+              <Input id="statusTag" name="statusTag" placeholder="e.g. Rough-in complete" />
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
+            <label htmlFor="note-content" className="block text-sm font-medium text-zinc-400 mb-1">
               {activeModal === "PROGRESS" ? "Work Performed *" : "Note Details *"}
             </label>
             <textarea 
+              id="note-content"
               name="content" 
               required 
               rows={4}
@@ -96,8 +141,45 @@ export function JobActions({ jobId }: Props) {
               autoFocus
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Category</label>
+            <AssetCategorySelect />
+          </div>
+          {activeModal === "NOTE" && (
+            <div className="rounded-xl border border-zinc-800 bg-black/20 p-4 space-y-4">
+              <label className="flex items-center gap-3 text-sm font-medium text-zinc-200">
+                <input
+                  type="checkbox"
+                  name="createTask"
+                  checked={createTaskFromNote}
+                  onChange={(event) => setCreateTaskFromNote(event.target.checked)}
+                  className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-brand focus:ring-brand"
+                />
+                Create task from this note
+              </label>
+              {createTaskFromNote && (
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="taskTitle" className="block text-sm font-medium text-zinc-400 mb-1">Task Title *</label>
+                    <Input id="taskTitle" name="taskTitle" required={createTaskFromNote} placeholder="e.g. Finish closeout checklist" />
+                  </div>
+                  <div>
+                    <label htmlFor="taskDescription" className="block text-sm font-medium text-zinc-400 mb-1">Task Description</label>
+                    <textarea
+                      id="taskDescription"
+                      name="taskDescription"
+                      rows={3}
+                      className="flex w-full rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 resize-none"
+                      placeholder="Defaults to the note details"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {submitError && <p className="text-sm text-red-400">{submitError}</p>}
           <div className="pt-4 flex justify-end gap-3">
-            <Button type="button" variant="ghost" onClick={() => setActiveModal("NONE")}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={closeModal}>Cancel</Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? "Saving..." : "Save"}
             </Button>
@@ -105,13 +187,12 @@ export function JobActions({ jobId }: Props) {
         </form>
       </Modal>
 
-      <Modal isOpen={activeModal === "PHOTO"} onClose={() => setActiveModal("NONE")} title="Upload Photo">
-        <div className="py-8 text-center text-zinc-400">
-          <Camera size={48} className="mx-auto mb-4 opacity-50" />
-          <p>Cloudflare R2 integration pending.</p>
-          <p className="text-sm mt-2">Photo upload will come after authenticated access.</p>
-        </div>
-      </Modal>
+      <AssetUploadModal
+        isOpen={activeModal === "UPLOAD"}
+        onClose={closeModal}
+        jobId={jobId}
+        title="Upload to Job Folder"
+      />
     </>
   );
 }

@@ -6,6 +6,7 @@ import { MapPin, Phone, User, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { JobActions } from "@/components/JobActions";
 import { requirePageCompanyUser } from "@/lib/current-user";
+import { JobFolderTabs } from "@/components/JobFolderTabs";
 
 export default async function JobFolder({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,6 +25,36 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
   });
 
   if (!job) return notFound();
+
+  const feedNotes = job.notes.map((note) => ({
+    id: note.id,
+    type: note.type,
+    content: note.content,
+    category: note.category,
+    statusTag: note.statusTag,
+    createdAt: note.createdAt.toISOString(),
+    authorName: note.author.name ?? note.author.email ?? "User",
+  }));
+
+  const feedFiles = job.files.map((file) => ({
+    id: file.id,
+    type: file.type,
+    originalName: file.originalName,
+    name: file.name,
+    category: file.category,
+    createdAt: file.createdAt.toISOString(),
+  }));
+
+  const taskItems = job.tasks.map((task) => ({
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    type: task.type,
+    priority: task.priority,
+    dueDate: task.dueDate?.toISOString() ?? null,
+    createdAt: task.createdAt.toISOString(),
+  }));
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -97,39 +128,7 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
 
           <Card>
             <CardContent className="p-0">
-              <div className="flex border-b border-zinc-800">
-                <button className="px-6 py-4 text-sm font-medium text-brand border-b-2 border-brand">Feed</button>
-                <button className="px-6 py-4 text-sm font-medium text-zinc-400 hover:text-zinc-300">Files ({job.files.length})</button>
-                <button className="px-6 py-4 text-sm font-medium text-zinc-400 hover:text-zinc-300">Tasks ({job.tasks.length})</button>
-              </div>
-
-              <div className="p-6">
-                {job.notes.length === 0 ? (
-                  <p className="text-zinc-500 text-center py-10">No activity yet. Log some progress or add a note!</p>
-                ) : (
-                  <div className="space-y-6">
-                    {job.notes.map(note => (
-                      <div key={note.id} className="flex gap-4">
-                        <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
-                          <User size={16} className="text-zinc-400" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium text-sm text-zinc-200">
-                              {note.author.name ?? note.author.email ?? "User"}
-                            </span>
-                            <span className="text-xs text-zinc-500">{new Date(note.createdAt).toLocaleDateString()}</span>
-                            {note.type === "PROGRESS" && (
-                              <Badge variant="success" className="scale-75 origin-left">Progress</Badge>
-                            )}
-                          </div>
-                          <p className="text-zinc-400 text-sm leading-relaxed">{note.content}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <JobFolderTabs notes={feedNotes} files={feedFiles} tasks={taskItems} />
             </CardContent>
           </Card>
 
