@@ -1,21 +1,53 @@
 import prisma from "@/lib/prisma";
-import { Search, HardHat } from "lucide-react";
+import { HardHat } from "lucide-react";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
+import { DashboardFilters } from "@/components/DashboardFilters";
 import { DashboardJobCard } from "@/components/DashboardJobCard";
 import { requirePageCompanyUser } from "@/lib/current-user";
+import {
+  getDashboardJobSearchWhere,
+  getDashboardStatusFilterWhere,
+  normalizeDashboardSearch,
+  normalizeDashboardStatusFilter,
+} from "@/lib/job-management";
 
-async function getCompanyAndJobs() {
+type DashboardSearchParams = Promise<{
+  search?: string | string[];
+  status?: string | string[];
+}>;
+
+function firstSearchParamValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function getCompanyAndJobs({
+  search,
+  status,
+}: {
+  search: string;
+  status: string;
+}) {
   const user = await requirePageCompanyUser();
   const jobs = await prisma.job.findMany({
-    where: { companyId: user.companyId },
+    where: {
+      companyId: user.companyId,
+      ...getDashboardStatusFilterWhere(status),
+      ...getDashboardJobSearchWhere(search),
+    },
     orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
   });
 
   return { company: user.company, jobs };
 }
 
-export default async function Dashboard() {
-  const { company, jobs } = await getCompanyAndJobs();
+export default async function Dashboard({ searchParams }: { searchParams: DashboardSearchParams }) {
+  const params = await searchParams;
+  const currentSearch = normalizeDashboardSearch(firstSearchParamValue(params.search));
+  const currentStatus = normalizeDashboardStatusFilter(firstSearchParamValue(params.status));
+  const { company, jobs } = await getCompanyAndJobs({
+    search: currentSearch,
+    status: currentStatus,
+  });
 
   return (
     <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl mx-auto pt-4">
@@ -31,14 +63,7 @@ export default async function Dashboard() {
         </div>
 
         <div className="flex items-center gap-4 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
-            <input
-              type="text"
-              placeholder="Search jobs..."
-              className="w-full h-10 pl-10 pr-4 bg-black/40 border border-white/10 rounded-full text-sm focus:outline-none focus:border-brand/50 transition-colors text-zinc-200 placeholder:text-zinc-500"
-            />
-          </div>
+          <DashboardFilters currentSearch={currentSearch} currentStatus={currentStatus} />
         </div>
       </div>
 

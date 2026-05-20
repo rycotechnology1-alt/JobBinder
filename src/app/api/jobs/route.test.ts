@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireCompanyUser = vi.fn();
 const accessErrorResponse = vi.fn();
+const findMany = vi.fn();
 const findFirst = vi.fn();
 const update = vi.fn();
 
@@ -14,7 +15,7 @@ vi.mock("@/lib/current-user", () => ({
 vi.mock("@/lib/prisma", () => ({
   default: {
     job: {
-      findMany: vi.fn(),
+      findMany,
       findFirst,
       create: vi.fn(),
       update,
@@ -29,6 +30,66 @@ async function patchJob(body: unknown) {
     body: JSON.stringify(body),
   }));
 }
+
+async function getJobs(url = "http://localhost/api/jobs") {
+  const { GET } = await import("./route");
+  return GET(new NextRequest(url));
+}
+
+describe("GET /api/jobs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    accessErrorResponse.mockReturnValue(null);
+    findMany.mockResolvedValue([]);
+  });
+
+  it("filters dashboard jobs by search across title, customer, PO number, and job number", async () => {
+    const response = await getJobs("http://localhost/api/jobs?search=PO-42");
+
+    expect(response.status).toBe(200);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        companyId: "company-1",
+        OR: [
+          { title: { contains: "PO-42", mode: "insensitive" } },
+          { customerName: { contains: "PO-42", mode: "insensitive" } },
+          { poNumber: { contains: "PO-42", mode: "insensitive" } },
+          { jobNumber: { contains: "PO-42", mode: "insensitive" } },
+        ],
+      },
+    }));
+  });
+
+  it("maps grouped dashboard status filters for active, delay, and complete jobs", async () => {
+    await getJobs("http://localhost/api/jobs?status=active");
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: {
+        companyId: "company-1",
+        status: { in: ["DESIGN", "ACTIVE", "PUNCH_LIST", "FINAL_BILL_SUBMITTED"] },
+      },
+    }));
+
+    await getJobs("http://localhost/api/jobs?status=delay");
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { companyId: "company-1", status: "DELAY" },
+    }));
+
+    await getJobs("http://localhost/api/jobs?status=complete");
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { companyId: "company-1", status: "COMPLETE" },
+    }));
+  });
+
+  it("keeps company scoping and treats invalid grouped status filters as all jobs", async () => {
+    await getJobs("http://localhost/api/jobs?status=ARCHIVED");
+
+    expect(requireCompanyUser).toHaveBeenCalledOnce();
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { companyId: "company-1" },
+    }));
+  });
+});
 
 describe("PATCH /api/jobs", () => {
   beforeEach(() => {

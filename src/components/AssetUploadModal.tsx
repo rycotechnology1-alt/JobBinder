@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud } from "lucide-react";
 import { DEFAULT_ASSET_CATEGORY, getMimeTypeForFilename } from "@/lib/asset-categories";
+import { queueOfflineFile } from "@/lib/offline-sync/queue";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -26,6 +27,14 @@ const ACCEPTED_UPLOAD_TYPES = [
   ".xlsx",
 ].join(",");
 
+function isOffline() {
+  return typeof navigator !== "undefined" && !navigator.onLine;
+}
+
+function isNetworkUploadError(error: unknown) {
+  return isOffline() || error instanceof TypeError;
+}
+
 export function AssetUploadModal({
   isOpen,
   onClose,
@@ -37,6 +46,7 @@ export function AssetUploadModal({
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,7 +54,7 @@ export function AssetUploadModal({
     setStatus(null);
 
     const formData = new FormData(event.currentTarget);
-    const selectedFile = formData.get("file");
+    const selectedFile = selectedUploadFile ?? formData.get("file");
     const category = formData.get("category")?.toString() || DEFAULT_ASSET_CATEGORY;
 
     if (!(selectedFile instanceof File) || selectedFile.size === 0) {
@@ -52,31 +62,55 @@ export function AssetUploadModal({
       return;
     }
 
+    const sourceFile = selectedFile;
     setIsUploading(true);
+    let preparedFile: Blob = sourceFile;
+    let preparedContentType = sourceFile.type || getMimeTypeForFilename(sourceFile.name) || "";
 
     try {
-      let uploadFile = selectedFile;
-
-      if (selectedFile.type.startsWith("image/")) {
+      if (sourceFile.type.startsWith("image/")) {
         setStatus("Compressing image...");
-        uploadFile = await imageCompression(selectedFile, {
+        preparedFile = await imageCompression(sourceFile, {
           maxSizeMB: 1.2,
           maxWidthOrHeight: 1920,
           useWebWorker: true,
         });
       }
 
-      const contentType = uploadFile.type || selectedFile.type || getMimeTypeForFilename(selectedFile.name);
+      const contentType = preparedFile.type || sourceFile.type || getMimeTypeForFilename(sourceFile.name);
       if (!contentType) {
         throw new Error("Unsupported file type.");
       }
+      const uploadContentType = contentType;
+      preparedContentType = uploadContentType;
+
+      async function queueUpload() {
+        setStatus("Saving offline...");
+        await queueOfflineFile({
+          jobId,
+          originalName: sourceFile.name,
+          name: formData.get("name")?.toString() || "",
+          contentType: uploadContentType,
+          category,
+          blob: preparedFile,
+        });
+      }
+
+      if (isOffline()) {
+        await queueUpload();
+        formRef.current?.reset();
+        setSelectedUploadFile(null);
+        onClose();
+        return;
+      }
+
       setStatus("Preparing secure upload...");
       const uploadUrlResponse = await fetch("/api/files/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          filename: selectedFile.name,
-          contentType,
+          filename: sourceFile.name,
+          contentType: uploadContentType,
         }),
       });
 
@@ -88,8 +122,8 @@ export function AssetUploadModal({
       setStatus("Uploading to secure storage...");
       const r2Response = await fetch(uploadUrlPayload.uploadUrl, {
         method: "PUT",
-        headers: { "Content-Type": contentType },
-        body: uploadFile,
+        headers: { "Content-Type": uploadContentType },
+        body: preparedFile,
       });
 
       if (!r2Response.ok) {
@@ -103,9 +137,9 @@ export function AssetUploadModal({
         body: JSON.stringify({
           jobId,
           objectKey: uploadUrlPayload.objectKey,
-          originalName: selectedFile.name,
+          originalName: sourceFile.name,
           name: formData.get("name"),
-          contentType,
+          contentType: uploadContentType,
           category,
         }),
       });
@@ -116,10 +150,31 @@ export function AssetUploadModal({
       }
 
       formRef.current?.reset();
+      setSelectedUploadFile(null);
       onClose();
       router.refresh();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+      if (isNetworkUploadError(uploadError)) {
+        try {
+          const fallbackContentType = preparedContentType || sourceFile.type || getMimeTypeForFilename(sourceFile.name);
+          if (!fallbackContentType) throw new Error("Unsupported file type.");
+          await queueOfflineFile({
+            jobId,
+            originalName: sourceFile.name,
+            name: formData.get("name")?.toString() || "",
+            contentType: fallbackContentType,
+            category,
+            blob: preparedFile,
+          });
+          formRef.current?.reset();
+          setSelectedUploadFile(null);
+          onClose();
+        } catch (queueError) {
+          setError(queueError instanceof Error ? queueError.message : "Upload failed.");
+        }
+      } else {
+        setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+      }
     } finally {
       setIsUploading(false);
       setStatus(null);
@@ -131,12 +186,14 @@ export function AssetUploadModal({
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-xl border border-dashed border-zinc-700 bg-black/20 p-5">
           <UploadCloud size={28} className="mb-3 text-brand-light" />
-          <label className="block text-sm font-medium text-zinc-300 mb-2">Photo or document</label>
+          <label htmlFor="upload-file" className="block text-sm font-medium text-zinc-300 mb-2">Photo or document</label>
           <input
+            id="upload-file"
             name="file"
             type="file"
             accept={ACCEPTED_UPLOAD_TYPES}
             required
+            onChange={(event) => setSelectedUploadFile(event.currentTarget.files?.[0] ?? null)}
             className="block w-full text-sm text-zinc-300 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-100 hover:file:bg-zinc-700"
           />
           <p className="mt-2 text-xs text-zinc-500">Images are compressed before upload. PDFs and office documents upload unchanged.</p>
@@ -150,8 +207,8 @@ export function AssetUploadModal({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-zinc-400 mb-1">Category</label>
-          <AssetCategorySelect required />
+          <label htmlFor="upload-category" className="block text-sm font-medium text-zinc-400 mb-1">Category</label>
+          <AssetCategorySelect id="upload-category" required />
         </div>
 
         {status && <p className="text-sm text-brand-light">{status}</p>}

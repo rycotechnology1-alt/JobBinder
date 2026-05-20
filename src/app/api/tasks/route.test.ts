@@ -94,6 +94,49 @@ describe("/api/tasks", () => {
     });
   });
 
+  it("returns an existing task for a repeated offline clientMutationId", async () => {
+    taskFindFirst.mockResolvedValueOnce({ id: "task-existing", clientMutationId: "offline-1" });
+
+    const response = await postTask({
+      jobId: "job-1",
+      title: "Offline punch",
+      type: "PUNCH_LIST",
+      createdAt: "2026-05-14T12:00:00.000Z",
+      clientMutationId: "offline-1",
+    });
+
+    expect(response.status).toBe(200);
+    expect(taskFindFirst).toHaveBeenCalledWith({
+      where: { companyId: "company-1", clientMutationId: "offline-1" },
+    });
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({ id: "task-existing", clientMutationId: "offline-1" });
+  });
+
+  it("stores clientMutationId and original capture time for new offline tasks", async () => {
+    taskFindFirst.mockResolvedValueOnce(null);
+
+    const response = await postTask({
+      jobId: "job-1",
+      title: "Offline task",
+      description: "Captured at the site",
+      type: "TASK",
+      createdAt: "2026-05-14T12:00:00.000Z",
+      clientMutationId: "offline-2",
+    });
+
+    expect(response.status).toBe(201);
+    expect(taskCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyId: "company-1",
+        jobId: "job-1",
+        title: "Offline task",
+        createdAt: new Date("2026-05-14T12:00:00.000Z"),
+        clientMutationId: "offline-2",
+      }),
+    });
+  });
+
   it("rejects invalid create payloads and unknown jobs", async () => {
     const missingFields = await postTask({ jobId: "job-1", title: " " });
     expect(missingFields.status).toBe(400);

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { JobStatus } from "@prisma/client";
 import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
 import {
+  getDashboardJobSearchWhere,
+  getDashboardStatusFilterWhere,
   isValidJobStatus,
   isValidPriority,
   normalizeOptionalString,
@@ -16,22 +17,14 @@ export async function GET(req: NextRequest) {
   try {
     const user = await requireCompanyUser();
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status") as JobStatus | null;
+    const status = searchParams.get("status");
     const search = searchParams.get("search");
 
     const jobs = await prisma.job.findMany({
       where: {
         companyId: user.companyId,
-        ...(status ? { status } : {}),
-        ...(search
-          ? {
-              OR: [
-                { title: { contains: search, mode: "insensitive" } },
-                { customerName: { contains: search, mode: "insensitive" } },
-                { jobNumber: { contains: search, mode: "insensitive" } },
-              ],
-            }
-          : {}),
+        ...getDashboardStatusFilterWhere(status),
+        ...getDashboardJobSearchWhere(search),
       },
       orderBy: [
         { priority: "desc" },

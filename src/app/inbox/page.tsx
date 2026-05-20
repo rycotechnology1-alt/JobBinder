@@ -1,16 +1,15 @@
 import prisma from "@/lib/prisma";
 import { Card, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { InboxIcon, FileIcon, FileText } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { SimulateCaptureButton } from "@/components/SimulateCaptureButton";
 import { requirePageCompanyUser } from "@/lib/current-user";
 import { InboxUploadButton } from "@/components/InboxUploadButton";
+import { InboxItemActions } from "@/components/InboxItemActions";
 
 export default async function InboxPage() {
   const user = await requirePageCompanyUser();
 
-  const [notes, files] = await Promise.all([
+  const [notes, files, jobs] = await Promise.all([
     prisma.note.findMany({
       where: { companyId: user.companyId, jobId: null },
       orderBy: { createdAt: "desc" },
@@ -18,7 +17,19 @@ export default async function InboxPage() {
     prisma.file.findMany({
       where: { companyId: user.companyId, jobId: null },
       orderBy: { createdAt: "desc" },
-    })
+    }),
+    prisma.job.findMany({
+      where: { companyId: user.companyId, status: { not: "COMPLETE" } },
+      orderBy: [
+        { priority: "desc" },
+        { updatedAt: "desc" },
+      ],
+      select: {
+        id: true,
+        title: true,
+        customerName: true,
+      },
+    }),
   ]);
 
   const hasItems = notes.length > 0 || files.length > 0;
@@ -34,7 +45,6 @@ export default async function InboxPage() {
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
           <InboxUploadButton />
-          <SimulateCaptureButton />
         </div>
       </div>
 
@@ -50,40 +60,37 @@ export default async function InboxPage() {
         <div className="grid grid-cols-1 gap-4">
           {notes.map(note => (
             <Card key={note.id} className="group">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-zinc-800 rounded-lg flex items-center justify-center">
+              <CardContent className="p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-4">
+                  <div className="w-10 h-10 bg-zinc-800 rounded-lg flex shrink-0 items-center justify-center">
                     <FileText size={20} className="text-zinc-400" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium text-zinc-200 line-clamp-1">{note.content}</p>
                     <p className="text-xs text-zinc-500">Captured {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}</p>
                   </div>
                 </div>
-                <Button variant="secondary" size="sm">Assign to Job</Button>
+                <InboxItemActions itemType="note" itemId={note.id} jobs={jobs} />
               </CardContent>
             </Card>
           ))}
 
           {files.map(file => (
             <Card key={file.id} className="group">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-zinc-800 rounded-lg flex items-center justify-center">
+              <CardContent className="p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-4">
+                  <div className="w-10 h-10 bg-zinc-800 rounded-lg flex shrink-0 items-center justify-center">
                     <FileIcon size={20} className="text-zinc-400" />
                   </div>
-                  <div>
-                    <p className="font-medium text-zinc-200">{file.name || file.originalName}</p>
+                  <div className="min-w-0">
+                    <p className="font-medium text-zinc-200 truncate">{file.name || file.originalName}</p>
                     <p className="text-xs text-zinc-500">
                       Uploaded {formatDistanceToNow(new Date(file.createdAt), { addSuffix: true })}
                       {file.category ? ` - ${file.category}` : ""}
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm">View</Button>
-                  <Button variant="secondary" size="sm">Assign to Job</Button>
-                </div>
+                <InboxItemActions itemType="file" itemId={file.id} jobs={jobs} />
               </CardContent>
             </Card>
           ))}

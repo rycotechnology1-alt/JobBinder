@@ -4,6 +4,7 @@ import { signOut } from "@/auth";
 import { getCurrentAppUser } from "@/lib/current-user";
 import { AccountMenu } from "@/components/AccountMenu";
 import { NavLinks } from "@/components/NavLinks";
+import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 
 export async function Navbar() {
   const user = await getCurrentAppUser();
@@ -28,6 +29,7 @@ export async function Navbar() {
 
         <div className="flex items-center gap-6">
           {user?.companyId && <NavLinks />}
+          {user?.companyId && <SyncStatusIndicator />}
           
           {user ? (
             <AccountMenu

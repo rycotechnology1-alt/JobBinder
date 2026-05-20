@@ -16,7 +16,7 @@ This document is designed for the next developer or AI agent picking up this rep
 *   **Account Menu:** The top-right account circle opens an account menu with user identity, Team Settings, and an explicit Sign out button instead of signing out immediately.
 
 **The "Mock" Elements (Needs Replacement):**
-*   **Dashboard Search/Filters:** The search bar and dropdowns on the Dashboard are currently static visual placeholders.
+*   No known dashboard mock controls remain after Phase 6 search/filtering.
 
 ---
 
@@ -56,8 +56,8 @@ The database supports Tasks, and the Job Folder now has a working task/punch-lis
 - [x] **Status Toggles:** Allow users to move a task from `OPEN` to `IN_PROGRESS` to `DONE`, with a reopen action back to `OPEN`.
 
 ### Phase 6: Search & Filtering
-- [ ] **Dashboard Search:** Make the search bar functional so users can filter jobs by Title, Customer, PO Number, or Job Number.
-- [ ] **Dashboard Filters:** Wire up the Status dropdowns (Active, Delay, Complete).
+- [x] **Dashboard Search:** Make the search bar functional so users can filter jobs by Title, Customer, PO Number, or Job Number.
+- [x] **Dashboard Filters:** Wire up the Status dropdowns (Active, Delay, Complete).
 
 ### Phase 7: PWA & True Offline Mode
 The brief emphasizes offline capture for jobsites without cell service.

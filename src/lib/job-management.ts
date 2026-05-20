@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import type { Prisma } from "@prisma/client";
 
 export const JOB_STATUSES = [
   "DESIGN",
@@ -11,6 +12,9 @@ export const JOB_STATUSES = [
 
 export type JobStatusValue = (typeof JOB_STATUSES)[number];
 export type PriorityValue = 1 | 2 | 3 | 4;
+export type DashboardStatusFilter = "all" | "active" | "delay" | "complete";
+
+export const DASHBOARD_STATUS_FILTERS = ["all", "active", "delay", "complete"] as const;
 
 export type CompletionProgress = {
   percent: number;
@@ -78,6 +82,51 @@ export function getJobStatusDisplay(status: string) {
 
 export function isValidJobStatus(status: unknown): status is JobStatusValue {
   return typeof status === "string" && JOB_STATUSES.includes(status as JobStatusValue);
+}
+
+export function normalizeDashboardStatusFilter(status: unknown): DashboardStatusFilter {
+  return typeof status === "string" && DASHBOARD_STATUS_FILTERS.includes(status as DashboardStatusFilter)
+    ? status as DashboardStatusFilter
+    : "all";
+}
+
+export function normalizeDashboardSearch(search: unknown) {
+  if (typeof search !== "string") return "";
+  return search.trim();
+}
+
+export function getDashboardStatusFilterWhere(status: unknown): Prisma.JobWhereInput {
+  const filter = normalizeDashboardStatusFilter(status);
+
+  if (filter === "active") {
+    return {
+      status: { in: ["DESIGN", "ACTIVE", "PUNCH_LIST", "FINAL_BILL_SUBMITTED"] },
+    };
+  }
+
+  if (filter === "delay") {
+    return { status: "DELAY" };
+  }
+
+  if (filter === "complete") {
+    return { status: "COMPLETE" };
+  }
+
+  return {};
+}
+
+export function getDashboardJobSearchWhere(search: unknown): Prisma.JobWhereInput {
+  const query = normalizeDashboardSearch(search);
+  if (!query) return {};
+
+  return {
+    OR: [
+      { title: { contains: query, mode: "insensitive" } },
+      { customerName: { contains: query, mode: "insensitive" } },
+      { poNumber: { contains: query, mode: "insensitive" } },
+      { jobNumber: { contains: query, mode: "insensitive" } },
+    ],
+  };
 }
 
 export function getPriorityDisplay(priority: number) {

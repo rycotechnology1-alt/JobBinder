@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobActions } from "./JobActions";
 
 const refresh = vi.fn();
+const offlineQueueMocks = vi.hoisted(() => ({
+  queueOfflineNote: vi.fn(),
+  queueOfflineTask: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -17,9 +21,18 @@ vi.mock("@/components/AssetUploadModal", () => ({
   AssetUploadModal: () => null,
 }));
 
+vi.mock("@/lib/offline-sync/queue", () => ({
+  queueOfflineNote: offlineQueueMocks.queueOfflineNote,
+  queueOfflineTask: offlineQueueMocks.queueOfflineTask,
+}));
+
 describe("JobActions", () => {
   beforeEach(() => {
     refresh.mockClear();
+    offlineQueueMocks.queueOfflineNote.mockReset();
+    offlineQueueMocks.queueOfflineTask.mockReset();
+    offlineQueueMocks.queueOfflineNote.mockResolvedValue({ id: "queued-note" });
+    offlineQueueMocks.queueOfflineTask.mockResolvedValue({ id: "queued-task" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -30,6 +43,7 @@ describe("JobActions", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     cleanup();
   });
 
@@ -141,5 +155,48 @@ describe("JobActions", () => {
 
     expect(await screen.findByText("Could not create task.")).toBeTruthy();
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("queues notes and progress logs while offline", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const user = userEvent.setup();
+    render(<JobActions jobId="job-1" />);
+
+    await user.click(screen.getByRole("button", { name: /Log Progress/i }));
+    await user.type(screen.getByLabelText("Work Performed *"), "Installed conduit.");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(offlineQueueMocks.queueOfflineNote).toHaveBeenCalledWith({
+        jobId: "job-1",
+        type: "PROGRESS",
+        content: "Installed conduit.",
+        category: "Misc",
+        statusTag: "",
+      });
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.queryByText("Installed conduit.")).toBeNull();
+  });
+
+  it("queues quick tasks while offline", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const user = userEvent.setup();
+    render(<JobActions jobId="job-1" />);
+
+    await user.click(screen.getByRole("button", { name: /Quick Task/i }));
+    await user.type(screen.getByLabelText("Title *"), "Call inspector");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(offlineQueueMocks.queueOfflineTask).toHaveBeenCalledWith({
+        jobId: "job-1",
+        title: "Call inspector",
+        description: "",
+        type: "TASK",
+        dueDate: "",
+      });
+    });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

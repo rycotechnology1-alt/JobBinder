@@ -1,18 +1,21 @@
 import { ASSET_CATEGORIES, DEFAULT_ASSET_CATEGORY } from "@/lib/asset-categories";
 
 type Props = {
+  id?: string;
   name?: string;
   defaultValue?: string | null;
   required?: boolean;
 };
 
 export function AssetCategorySelect({
+  id,
   name = "category",
   defaultValue = DEFAULT_ASSET_CATEGORY,
   required = false,
 }: Props) {
   return (
     <select
+      id={id}
       name={name}
       defaultValue={defaultValue ?? DEFAULT_ASSET_CATEGORY}
       required={required}

@@ -5,16 +5,18 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
-import { Camera, ClipboardList, FileText, ListTodo } from "lucide-react";
+import { Camera, ClipboardList, FileText, ListTodo, Archive } from "lucide-react";
 import { AssetCategorySelect } from "@/components/AssetCategorySelect";
 import { AssetUploadModal } from "@/components/AssetUploadModal";
+import { ExportModal } from "@/components/ExportModal";
+import { queueOfflineNote, queueOfflineTask } from "@/lib/offline-sync/queue";
 
 interface Props {
   jobId: string;
 }
 
 export function JobActions({ jobId }: Props) {
-  const [activeModal, setActiveModal] = useState<"NONE" | "NOTE" | "PROGRESS" | "UPLOAD" | "TASK">("NONE");
+  const [activeModal, setActiveModal] = useState<"NONE" | "NOTE" | "PROGRESS" | "UPLOAD" | "TASK" | "EXPORT">("NONE");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createTaskFromNote, setCreateTaskFromNote] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -26,11 +28,21 @@ export function JobActions({ jobId }: Props) {
     setSubmitError(null);
   }
 
+  function isOffline() {
+    return typeof navigator !== "undefined" && !navigator.onLine;
+  }
+
+  function isNetworkCaptureError(error: unknown) {
+    return isOffline() || error instanceof TypeError;
+  }
+
   async function handleAddNote(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsSubmitting(true);
     const formData = new FormData(e.currentTarget);
     const content = formData.get("content")?.toString() || "";
+    const category = formData.get("category")?.toString() || "Misc";
+    const statusTag = activeModal === "PROGRESS" ? formData.get("statusTag")?.toString() || "" : null;
     const taskTitle = formData.get("taskTitle")?.toString().trim() || "";
     const taskDescription = formData.get("taskDescription")?.toString().trim() || content;
     const shouldCreateTask = activeModal === "NOTE" && createTaskFromNote;
@@ -41,18 +53,45 @@ export function JobActions({ jobId }: Props) {
       setIsSubmitting(false);
       return;
     }
+
+    const noteInput = {
+      jobId,
+      type: activeModal === "PROGRESS" ? ("PROGRESS" as const) : ("GENERAL" as const),
+      content,
+      category,
+      statusTag,
+    };
+
+    async function queueCapture() {
+      await queueOfflineNote(noteInput);
+      if (shouldCreateTask) {
+        await queueOfflineTask({
+          jobId,
+          title: taskTitle,
+          description: taskDescription,
+          type: "TASK",
+          dueDate: "",
+        });
+      }
+    }
+
+    if (isOffline()) {
+      try {
+        await queueCapture();
+        closeModal();
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : "Could not save offline capture.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
     
     try {
       const res = await fetch("/api/notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId,
-          type: activeModal === "PROGRESS" ? "PROGRESS" : "GENERAL",
-          content,
-          category: formData.get("category"),
-          statusTag: activeModal === "PROGRESS" ? formData.get("statusTag") : undefined,
-        }),
+        body: JSON.stringify(noteInput),
       });
 
       if (!res.ok) {
@@ -82,7 +121,16 @@ export function JobActions({ jobId }: Props) {
       router.refresh();
     } catch (error) {
       console.error(error);
-      setSubmitError(error instanceof Error ? error.message : "Could not save note.");
+      if (isNetworkCaptureError(error)) {
+        try {
+          await queueCapture();
+          closeModal();
+        } catch (queueError) {
+          setSubmitError(queueError instanceof Error ? queueError.message : "Could not save offline capture.");
+        }
+      } else {
+        setSubmitError(error instanceof Error ? error.message : "Could not save note.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -105,17 +153,31 @@ export function JobActions({ jobId }: Props) {
 
     setIsSubmitting(true);
 
+    const taskInput = {
+      jobId,
+      title,
+      description,
+      type: type === "PUNCH_LIST" ? ("PUNCH_LIST" as const) : ("TASK" as const),
+      dueDate,
+    };
+
+    if (isOffline()) {
+      try {
+        await queueOfflineTask(taskInput);
+        closeModal();
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : "Could not save offline task.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     try {
       const response = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId,
-          title,
-          description,
-          type,
-          dueDate,
-        }),
+        body: JSON.stringify(taskInput),
       });
 
       if (!response.ok) {
@@ -127,7 +189,16 @@ export function JobActions({ jobId }: Props) {
       router.refresh();
     } catch (error) {
       console.error(error);
-      setSubmitError(error instanceof Error ? error.message : "Could not create task.");
+      if (isNetworkCaptureError(error)) {
+        try {
+          await queueOfflineTask(taskInput);
+          closeModal();
+        } catch (queueError) {
+          setSubmitError(queueError instanceof Error ? queueError.message : "Could not save offline task.");
+        }
+      } else {
+        setSubmitError(error instanceof Error ? error.message : "Could not create task.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -137,6 +208,9 @@ export function JobActions({ jobId }: Props) {
     <>
       {/* Desktop Buttons */}
       <div className="hidden md:flex justify-end gap-3 mb-4">
+        <Button variant="outline" className="gap-2 border-zinc-800 text-zinc-300 hover:bg-zinc-800" onClick={() => setActiveModal("EXPORT")}>
+          <Archive size={16}/> Export Job Package
+        </Button>
         <Button variant="secondary" className="gap-2" onClick={() => setActiveModal("UPLOAD")}>
           <Camera size={16}/> Upload
         </Button>
@@ -152,22 +226,27 @@ export function JobActions({ jobId }: Props) {
       </div>
 
       {/* Mobile Buttons */}
-      <div className="grid grid-cols-4 gap-3 md:hidden mb-6">
-        <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("UPLOAD")}>
-          <Camera size={20} className="text-brand-light" />
-          Upload
-        </Button>
-        <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("TASK")}>
-          <ListTodo size={20} className="text-amber-400" />
-          Task
-        </Button>
-        <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("PROGRESS")}>
-          <ClipboardList size={20} className="text-emerald-400" />
-          Progress
-        </Button>
-        <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("NOTE")}>
-          <FileText size={20} className="text-purple-400" />
-          Note
+      <div className="md:hidden mb-6">
+        <div className="grid grid-cols-4 gap-3">
+          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("UPLOAD")}>
+            <Camera size={20} className="text-brand-light" />
+            Upload
+          </Button>
+          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("TASK")}>
+            <ListTodo size={20} className="text-amber-400" />
+            Task
+          </Button>
+          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("PROGRESS")}>
+            <ClipboardList size={20} className="text-emerald-400" />
+            Progress
+          </Button>
+          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("NOTE")}>
+            <FileText size={20} className="text-purple-400" />
+            Note
+          </Button>
+        </div>
+        <Button variant="outline" className="w-full mt-3 gap-2 border-zinc-800 text-zinc-300 hover:bg-zinc-800 py-3 h-auto text-xs" onClick={() => setActiveModal("EXPORT")}>
+          <Archive size={16} className="text-brand-light" /> Export Job Package
         </Button>
       </div>
 
@@ -195,7 +274,7 @@ export function JobActions({ jobId }: Props) {
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-400 mb-1">Category</label>
-            <AssetCategorySelect />
+            <AssetCategorySelect id="note-category" />
           </div>
           {activeModal === "NOTE" && (
             <div className="rounded-xl border border-zinc-800 bg-black/20 p-4 space-y-4">
@@ -303,6 +382,13 @@ export function JobActions({ jobId }: Props) {
         onClose={closeModal}
         jobId={jobId}
         title="Upload to Job Folder"
+      />
+
+      <ExportModal
+        isOpen={activeModal === "EXPORT"}
+        onClose={closeModal}
+        jobId={jobId}
+        jobTitle="this Job folder"
       />
     </>
   );

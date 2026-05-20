@@ -72,3 +72,37 @@ export async function createSignedAccessUrl(input: {
 
   return getSignedUrl(getR2Client(), command, { expiresIn: input.expiresIn ?? 300 });
 }
+
+export async function downloadR2Object(objectKey: string): Promise<Buffer> {
+  const client = getR2Client();
+  const command = new GetObjectCommand({
+    Bucket: getR2BucketName(),
+    Key: objectKey,
+  });
+
+  const response = await client.send(command);
+  if (!response.Body) {
+    throw new Error("Empty response body from R2");
+  }
+
+  const bytes = await response.Body.transformToByteArray();
+  return Buffer.from(bytes);
+}
+
+export async function uploadR2Object(
+  objectKey: string,
+  body: Buffer | Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const client = getR2Client();
+  const command = new PutObjectCommand({
+    Bucket: getR2BucketName(),
+    Key: objectKey,
+    Body: body,
+    ContentType: contentType,
+  });
+
+  await client.send(command);
+}
+
+

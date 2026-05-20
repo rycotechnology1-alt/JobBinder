@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateCompletionProgress,
+  getDashboardJobSearchWhere,
+  getDashboardStatusFilterWhere,
   formatTargetCompletionDate,
   getJobStatusDisplay,
   getPriorityDisplay,
@@ -92,5 +94,27 @@ describe("job management helpers", () => {
 
   it("formats stored target dates without timezone day drift", () => {
     expect(formatTargetCompletionDate("2026-05-20T00:00:00.000Z")).toBe("May 20, 2026");
+  });
+
+  it("normalizes grouped dashboard status filters", () => {
+    expect(getDashboardStatusFilterWhere("all")).toEqual({});
+    expect(getDashboardStatusFilterWhere("active")).toEqual({
+      status: { in: ["DESIGN", "ACTIVE", "PUNCH_LIST", "FINAL_BILL_SUBMITTED"] },
+    });
+    expect(getDashboardStatusFilterWhere("delay")).toEqual({ status: "DELAY" });
+    expect(getDashboardStatusFilterWhere("complete")).toEqual({ status: "COMPLETE" });
+    expect(getDashboardStatusFilterWhere("ARCHIVED")).toEqual({});
+  });
+
+  it("builds dashboard search filters for job identifiers", () => {
+    expect(getDashboardJobSearchWhere("  PO-42  ")).toEqual({
+      OR: [
+        { title: { contains: "PO-42", mode: "insensitive" } },
+        { customerName: { contains: "PO-42", mode: "insensitive" } },
+        { poNumber: { contains: "PO-42", mode: "insensitive" } },
+        { jobNumber: { contains: "PO-42", mode: "insensitive" } },
+      ],
+    });
+    expect(getDashboardJobSearchWhere("   ")).toEqual({});
   });
 });

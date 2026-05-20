@@ -11,9 +11,12 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireCompanyUser();
     const body = await req.json();
-    const { jobId, title, description, type, dueDate, assignedToId } = body;
+    const { jobId, title, description, type, dueDate, assignedToId, createdAt } = body;
     const normalizedTitle = typeof title === "string" ? title.trim() : "";
     const normalizedType = type === undefined || type === null || type === "" ? "TASK" : type;
+    const clientMutationId = typeof body.clientMutationId === "string" && body.clientMutationId.trim()
+      ? body.clientMutationId.trim()
+      : null;
 
     if (!jobId || !normalizedTitle) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -21,6 +24,16 @@ export async function POST(req: NextRequest) {
 
     if (!isValidTaskType(normalizedType)) {
       return NextResponse.json({ error: "Invalid task type" }, { status: 400 });
+    }
+
+    if (clientMutationId) {
+      const existingTask = await prisma.task.findFirst({
+        where: { companyId: user.companyId, clientMutationId },
+      });
+
+      if (existingTask) {
+        return NextResponse.json(existingTask);
+      }
     }
 
     const job = await prisma.job.findFirst({
@@ -53,6 +66,8 @@ export async function POST(req: NextRequest) {
         dueDate: dueDate ? new Date(dueDate) : null,
         createdById: user.id,
         assignedToId,
+        ...(clientMutationId ? { clientMutationId } : {}),
+        ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
       },
     });
 

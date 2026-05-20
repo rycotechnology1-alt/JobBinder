@@ -59,6 +59,7 @@ model User {
   files          File[]
   tasksCreated   Task[]
   tasksAssigned  Task[]   @relation("AssignedTasks")
+  exports        Export[]
 }
 
 model Account {
@@ -153,6 +154,7 @@ model Job {
   notes                Note[]
   files                File[]
   tasks                Task[]
+  exports              Export[]
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +176,7 @@ model Note {
   category    String?  // e.g., "Material issue", "Customer conversation"
   
   statusTag   String?  // Used for Progress logs
+  clientMutationId String?
 
   createdAt   DateTime @default(now()) // Can be set by client for offline captures
   updatedAt   DateTime @updatedAt
@@ -183,6 +186,8 @@ model Note {
   author      User     @relation(fields: [authorId], references: [id])
   
   files       File[]   @relation("NoteFiles")
+
+  @@unique([companyId, clientMutationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +216,7 @@ model File {
 
   noteId               String?
   taskId               String?
+  clientMutationId     String?
 
   createdAt            DateTime @default(now()) // Can be set by client for offline captures
   updatedAt            DateTime @updatedAt
@@ -220,6 +226,8 @@ model File {
   uploader             User     @relation(fields: [uploaderId], references: [id])
   note                 Note?    @relation("NoteFiles", fields: [noteId], references: [id])
   task                 Task?    @relation("TaskFiles", fields: [taskId], references: [id])
+
+  @@unique([companyId, clientMutationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +258,7 @@ model Task {
   
   createdById  String
   assignedToId String?
+  clientMutationId String?
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -260,4 +269,30 @@ model Task {
   assignedTo   User?      @relation("AssignedTasks", fields: [assignedToId], references: [id])
   
   files        File[]     @relation("TaskFiles")
+
+  @@unique([companyId, clientMutationId])
 }
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
+model Export {
+  id              String    @id @default(cuid())
+  jobId           String
+  createdById     String
+  destination     String    // "ZIP" | "SHARE_LINK" | "GOOGLE_DRIVE" | "ONEDRIVE"
+  status          String    // "PENDING" | "PROCESSING" | "READY" | "FAILED" | "EXPIRED"
+  optionsJson     String    // Stores serialized selection options
+  fileName        String?
+  storageKey      String?   // R2 key for the generated ZIP
+  downloadUrl     String?
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+  errorMessage    String?
+
+  job             Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy       User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+}
+
