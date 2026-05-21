@@ -48,7 +48,7 @@ describe("ManageJobDialog", () => {
 
   it("prefills existing job fields and submits a PATCH payload", async () => {
     const user = userEvent.setup();
-    render(<ManageJobDialog job={job} />);
+    render(<ManageJobDialog job={job} isAdmin />);
 
     await user.click(screen.getByRole("button", { name: "Manage Job" }));
     expect((screen.getByLabelText("Job Title *") as HTMLInputElement).value).toBe("Kitchen Remodel");
@@ -87,7 +87,7 @@ describe("ManageJobDialog", () => {
       ok: false,
       json: async () => ({ error: "Invalid priority" }),
     } as Response);
-    render(<ManageJobDialog job={job} />);
+    render(<ManageJobDialog job={job} isAdmin />);
 
     await user.click(screen.getByRole("button", { name: "Manage Job" }));
     await user.click(screen.getByRole("button", { name: "Save Job" }));
@@ -95,5 +95,35 @@ describe("ManageJobDialog", () => {
     expect(await screen.findByText("Invalid priority")).toBeTruthy();
     expect(screen.getByRole("dialog", { name: "Manage Job" })).toBeTruthy();
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("omits management fields from member UI and PATCH payload", async () => {
+    const user = userEvent.setup();
+    render(<ManageJobDialog job={job} isAdmin={false} />);
+
+    await user.click(screen.getByRole("button", { name: "Manage Job" }));
+    expect(screen.queryByLabelText("Status")).toBeNull();
+    expect(screen.queryByLabelText("Priority")).toBeNull();
+    expect(screen.queryByLabelText("Target Completion Date")).toBeNull();
+
+    await user.clear(screen.getByLabelText("PO Number"));
+    await user.type(screen.getByLabelText("PO Number"), "PO-20");
+    await user.click(screen.getByRole("button", { name: "Save Job" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/jobs",
+        expect.objectContaining({ method: "PATCH" }),
+      );
+    });
+    const [, options] = vi.mocked(fetch).mock.calls[0];
+    const payload = JSON.parse(String(options?.body));
+    expect(payload).toMatchObject({
+      id: "job-1",
+      poNumber: "PO-20",
+    });
+    expect(payload).not.toHaveProperty("status");
+    expect(payload).not.toHaveProperty("priority");
+    expect(payload).not.toHaveProperty("targetCompletionDate");
   });
 });

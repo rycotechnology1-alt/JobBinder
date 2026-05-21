@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FilePreview } from "@/components/FilePreview";
 import { JobFeed } from "@/components/JobFeed";
+import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
 
 type NoteItem = {
   id: string;
@@ -48,6 +49,7 @@ type Props = {
   notes: NoteItem[];
   files: FileItem[];
   tasks: TaskItem[];
+  isAdmin: boolean;
 };
 
 function sortTasks(tasks: TaskItem[]) {
@@ -65,7 +67,7 @@ function sortTasks(tasks: TaskItem[]) {
   });
 }
 
-export function JobFolderTabs({ notes, files, tasks: initialTasks }: Props) {
+export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("FEED");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [taskStatusOverrides, setTaskStatusOverrides] = useState<Record<string, TaskStatus>>({});
@@ -130,6 +132,10 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks }: Props) {
     }
   }
 
+  function refreshAfterDelete() {
+    router.refresh();
+  }
+
   const tabClass = (tab: Tab) => cn(
     "px-6 py-4 text-sm font-medium border-b-2 transition-colors",
     activeTab === tab
@@ -152,7 +158,9 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks }: Props) {
       </div>
 
       <div className="p-6">
-        {activeTab === "FEED" && <JobFeed notes={notes} files={files} />}
+        {activeTab === "FEED" && (
+          <JobFeed notes={notes} files={files} isAdmin={isAdmin} onItemDeleted={refreshAfterDelete} />
+        )}
 
         {activeTab === "FILES" && (
           <div className="space-y-6">
@@ -197,6 +205,8 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks }: Props) {
                     type={file.type}
                     filename={file.name || file.originalName}
                     category={file.category}
+                    canDelete={isAdmin}
+                    onDelete={refreshAfterDelete}
                   />
                 ))}
               </div>
@@ -214,6 +224,8 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks }: Props) {
               emptyMessage="No tasks yet."
               tasks={taskItems}
               onStatusChange={updateTaskStatus}
+              isAdmin={isAdmin}
+              onDeleted={refreshAfterDelete}
             />
 
             <TaskSection
@@ -222,6 +234,8 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks }: Props) {
               emptyMessage="No punch list items yet."
               tasks={punchListItems}
               onStatusChange={updateTaskStatus}
+              isAdmin={isAdmin}
+              onDeleted={refreshAfterDelete}
             />
           </div>
         )}
@@ -236,12 +250,16 @@ function TaskSection({
   emptyMessage,
   tasks,
   onStatusChange,
+  isAdmin,
+  onDeleted,
 }: {
   title: string;
   testId: string;
   emptyMessage: string;
   tasks: TaskItem[];
   onStatusChange: (taskId: string, status: TaskStatus) => void;
+  isAdmin: boolean;
+  onDeleted: () => void;
 }) {
   const incompleteTasks = tasks.filter((task) => task.status !== "DONE");
   const completedTasks = tasks.filter((task) => task.status === "DONE");
@@ -258,14 +276,14 @@ function TaskSection({
       ) : (
         <div className="space-y-3">
           {incompleteTasks.map((task) => (
-            <TaskRow key={task.id} task={task} onStatusChange={onStatusChange} />
+            <TaskRow key={task.id} task={task} onStatusChange={onStatusChange} isAdmin={isAdmin} onDeleted={onDeleted} />
           ))}
 
           {completedTasks.length > 0 && (
             <div className="pt-2 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Completed</p>
               {completedTasks.map((task) => (
-                <TaskRow key={task.id} task={task} onStatusChange={onStatusChange} />
+                <TaskRow key={task.id} task={task} onStatusChange={onStatusChange} isAdmin={isAdmin} onDeleted={onDeleted} />
               ))}
             </div>
           )}
@@ -278,9 +296,13 @@ function TaskSection({
 function TaskRow({
   task,
   onStatusChange,
+  isAdmin,
+  onDeleted,
 }: {
   task: TaskItem;
   onStatusChange: (taskId: string, status: TaskStatus) => void;
+  isAdmin: boolean;
+  onDeleted: () => void;
 }) {
   const isDone = task.status === "DONE";
   const nextAction = getNextTaskAction(task);
@@ -311,19 +333,30 @@ function TaskRow({
           )}
         </div>
       </div>
-      {nextAction && (
-        <Button
-          type="button"
-          variant={nextAction.variant}
-          size="sm"
-          className="shrink-0 gap-2"
-          onClick={() => onStatusChange(task.id, nextAction.status)}
-          aria-label={nextAction.ariaLabel}
-        >
-          <nextAction.Icon size={16} />
-          {nextAction.label}
-        </Button>
-      )}
+      <div className="flex shrink-0 items-center gap-2">
+        {nextAction && (
+          <Button
+            type="button"
+            variant={nextAction.variant}
+            size="sm"
+            className="gap-2"
+            onClick={() => onStatusChange(task.id, nextAction.status)}
+            aria-label={nextAction.ariaLabel}
+          >
+            <nextAction.Icon size={16} />
+            {nextAction.label}
+          </Button>
+        )}
+        {isAdmin && (
+          <DeleteConfirmationButton
+            endpoint={`/api/tasks/${task.id}`}
+            label={`Delete ${task.title}`}
+            title="Delete task"
+            message={`Delete "${task.title}" from this job? This cannot be undone.`}
+            onDeleted={onDeleted}
+          />
+        )}
+      </div>
     </div>
   );
 }

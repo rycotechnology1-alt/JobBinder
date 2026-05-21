@@ -6,6 +6,7 @@ import { ASSET_CATEGORIES } from "@/lib/asset-categories";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "@/components/FilePreview";
+import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
 
 type NoteItem = {
   id: string;
@@ -29,13 +30,15 @@ type FileItem = {
 type Props = {
   notes: NoteItem[];
   files: FileItem[];
+  isAdmin: boolean;
+  onItemDeleted: () => void;
 };
 
 type FeedItem =
   | ({ kind: "note" } & NoteItem)
   | ({ kind: "file" } & FileItem);
 
-export function JobFeed({ notes, files }: Props) {
+export function JobFeed({ notes, files, isAdmin, onItemDeleted }: Props) {
   const [selectedCategory, setSelectedCategory] = useState("All");
 
   const feedItems = useMemo<FeedItem[]>(() => {
@@ -89,6 +92,8 @@ export function JobFeed({ notes, files }: Props) {
                     type={item.type}
                     filename={item.name || item.originalName}
                     category={item.category}
+                    canDelete={isAdmin}
+                    onDelete={onItemDeleted}
                   />
                 </div>
               );
@@ -99,7 +104,7 @@ export function JobFeed({ notes, files }: Props) {
                 <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
                   <User size={16} className="text-zinc-400" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <span className="font-medium text-sm text-zinc-200">{item.authorName}</span>
                     <span className="text-xs text-zinc-500">{new Date(item.createdAt).toLocaleDateString()}</span>
@@ -111,6 +116,15 @@ export function JobFeed({ notes, files }: Props) {
                   {item.statusTag && <p className="text-xs text-brand-light mb-1">{item.statusTag}</p>}
                   <p className="text-zinc-400 text-sm leading-relaxed">{item.content}</p>
                 </div>
+                {isAdmin && (
+                  <DeleteConfirmationButton
+                    endpoint={`/api/notes/${item.id}`}
+                    label={`Delete ${item.content}`}
+                    title="Delete note"
+                    message="Delete this note from the job? This cannot be undone."
+                    onDeleted={onItemDeleted}
+                  />
+                )}
               </div>
             );
           })}

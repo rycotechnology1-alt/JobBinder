@@ -61,9 +61,15 @@ export async function PATCH(req: NextRequest) {
     const user = await requireCompanyUser();
     const body = await req.json();
     const id = typeof body.id === "string" ? body.id : "";
+    const managementFields = ["status", "priority", "targetCompletionDate"] as const;
+    const includesManagementFields = managementFields.some((field) => field in body);
 
     if (!id) {
       return NextResponse.json({ error: "Missing job id" }, { status: 400 });
+    }
+
+    if (includesManagementFields && user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
     const existingJob = await prisma.job.findFirst({

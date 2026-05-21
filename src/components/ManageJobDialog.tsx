@@ -27,9 +27,10 @@ type ManageableJob = {
 
 type Props = {
   job: ManageableJob;
+  isAdmin: boolean;
 };
 
-export function ManageJobDialog({ job }: Props) {
+export function ManageJobDialog({ job, isAdmin }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ export function ManageJobDialog({ job }: Props) {
     setError(null);
 
     const formData = new FormData(event.currentTarget);
-    const payload = {
+    const payload: Record<string, string | number> = {
       id: job.id,
       title: formData.get("title")?.toString() ?? "",
       customerName: formData.get("customerName")?.toString() ?? "",
@@ -53,10 +54,13 @@ export function ManageJobDialog({ job }: Props) {
       contactName: formData.get("contactName")?.toString() ?? "",
       contactPhone: formData.get("contactPhone")?.toString() ?? "",
       contactEmail: formData.get("contactEmail")?.toString() ?? "",
-      status: formData.get("status")?.toString() ?? "ACTIVE",
-      priority: Number(formData.get("priority") ?? 3),
-      targetCompletionDate: formData.get("targetCompletionDate")?.toString() ?? "",
     };
+
+    if (isAdmin) {
+      payload.status = formData.get("status")?.toString() ?? "ACTIVE";
+      payload.priority = Number(formData.get("priority") ?? 3);
+      payload.targetCompletionDate = formData.get("targetCompletionDate")?.toString() ?? "";
+    }
 
     try {
       const response = await fetch("/api/jobs", {
@@ -147,31 +151,33 @@ export function ManageJobDialog({ job }: Props) {
             </div>
           </section>
 
-          <section className="space-y-4">
-            <h3 className="text-sm font-semibold uppercase tracking-widest text-zinc-500">Management</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="status" className="block text-sm font-medium text-zinc-400 mb-1">Status</label>
-                <select id="status" name="status" defaultValue={job.status} className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                  {JOB_STATUSES.map((status) => (
-                    <option key={status} value={status}>{getJobStatusDisplay(status).label}</option>
-                  ))}
-                </select>
+          {isAdmin && (
+            <section className="space-y-4">
+              <h3 className="text-sm font-semibold uppercase tracking-widest text-zinc-500">Management</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="status" className="block text-sm font-medium text-zinc-400 mb-1">Status</label>
+                  <select id="status" name="status" defaultValue={job.status} className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                    {JOB_STATUSES.map((status) => (
+                      <option key={status} value={status}>{getJobStatusDisplay(status).label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="priority" className="block text-sm font-medium text-zinc-400 mb-1">Priority</label>
+                  <select id="priority" name="priority" defaultValue={getPriorityDisplay(job.priority).value} className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                    {[1, 2, 3, 4].map((priority) => (
+                      <option key={priority} value={priority}>{getPriorityDisplay(priority).label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="targetCompletionDate" className="block text-sm font-medium text-zinc-400 mb-1">Target Completion Date</label>
+                  <Input id="targetCompletionDate" name="targetCompletionDate" type="date" defaultValue={job.targetCompletionDate?.slice(0, 10) ?? ""} />
+                </div>
               </div>
-              <div>
-                <label htmlFor="priority" className="block text-sm font-medium text-zinc-400 mb-1">Priority</label>
-                <select id="priority" name="priority" defaultValue={getPriorityDisplay(job.priority).value} className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 text-sm text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                  {[1, 2, 3, 4].map((priority) => (
-                    <option key={priority} value={priority}>{getPriorityDisplay(priority).label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="targetCompletionDate" className="block text-sm font-medium text-zinc-400 mb-1">Target Completion Date</label>
-                <Input id="targetCompletionDate" name="targetCompletionDate" type="date" defaultValue={job.targetCompletionDate?.slice(0, 10) ?? ""} />
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 

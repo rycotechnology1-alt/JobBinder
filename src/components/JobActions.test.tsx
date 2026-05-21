@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobActions } from "./JobActions";
 
 const refresh = vi.fn();
+const push = vi.fn();
 const offlineQueueMocks = vi.hoisted(() => ({
   queueOfflineNote: vi.fn(),
   queueOfflineTask: vi.fn(),
@@ -14,6 +15,7 @@ const offlineQueueMocks = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     refresh,
+    push,
   }),
 }));
 
@@ -29,6 +31,7 @@ vi.mock("@/lib/offline-sync/queue", () => ({
 describe("JobActions", () => {
   beforeEach(() => {
     refresh.mockClear();
+    push.mockClear();
     offlineQueueMocks.queueOfflineNote.mockReset();
     offlineQueueMocks.queueOfflineTask.mockReset();
     offlineQueueMocks.queueOfflineNote.mockResolvedValue({ id: "queued-note" });
@@ -198,5 +201,23 @@ describe("JobActions", () => {
       });
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows whole-job delete only for admins and redirects after confirmation", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<JobActions jobId="job-1" isAdmin={false} />);
+
+    expect(screen.queryByRole("button", { name: "Delete job" })).toBeNull();
+
+    rerender(<JobActions jobId="job-1" isAdmin />);
+    await user.click(screen.getAllByRole("button", { name: "Delete job" })[0]);
+    expect(screen.getByRole("dialog", { name: "Delete job" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith("/api/jobs/job-1", expect.objectContaining({ method: "DELETE" }));
+    });
+    expect(push).toHaveBeenCalledWith("/");
+    expect(refresh).toHaveBeenCalled();
   });
 });

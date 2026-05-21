@@ -39,7 +39,7 @@ async function getJobs(url = "http://localhost/api/jobs") {
 describe("GET /api/jobs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({ id: "admin-1", companyId: "company-1", role: "ADMIN" });
     accessErrorResponse.mockReturnValue(null);
     findMany.mockResolvedValue([]);
   });
@@ -94,7 +94,7 @@ describe("GET /api/jobs", () => {
 describe("PATCH /api/jobs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({ id: "admin-1", companyId: "company-1", role: "ADMIN" });
     accessErrorResponse.mockReturnValue(null);
     findFirst.mockResolvedValue({ id: "job-1" });
     update.mockResolvedValue({
@@ -144,6 +144,64 @@ describe("PATCH /api/jobs", () => {
         contactEmail: "sam@example.com",
         description: "Near closeout",
         status: "FINAL_BILL_SUBMITTED",
+        priority: 4,
+        targetCompletionDate: new Date("2026-06-01T00:00:00.000Z"),
+      },
+    });
+  });
+
+  it("lets members update basic job fields without management fields", async () => {
+    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1", role: "MEMBER" });
+
+    const response = await patchJob({
+      id: "job-1",
+      title: "  Updated title  ",
+      customerName: " Acme ",
+    });
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "job-1" },
+      data: {
+        title: "Updated title",
+        customerName: "Acme",
+      },
+    });
+  });
+
+  it("rejects member attempts to update management fields", async () => {
+    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1", role: "MEMBER" });
+
+    const statusResponse = await patchJob({ id: "job-1", status: "DELAY" });
+    expect(statusResponse.status).toBe(403);
+    expect(await statusResponse.json()).toEqual({ error: "Admin access required" });
+
+    const priorityResponse = await patchJob({ id: "job-1", priority: 4 });
+    expect(priorityResponse.status).toBe(403);
+    expect(await priorityResponse.json()).toEqual({ error: "Admin access required" });
+
+    const targetResponse = await patchJob({ id: "job-1", targetCompletionDate: "2026-06-01" });
+    expect(targetResponse.status).toBe(403);
+    expect(await targetResponse.json()).toEqual({ error: "Admin access required" });
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("lets admins update management fields", async () => {
+    requireCompanyUser.mockResolvedValue({ id: "admin-1", companyId: "company-1", role: "ADMIN" });
+
+    const response = await patchJob({
+      id: "job-1",
+      status: "DELAY",
+      priority: 4,
+      targetCompletionDate: "2026-06-01",
+    });
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "job-1" },
+      data: {
+        status: "DELAY",
         priority: 4,
         targetCompletionDate: new Date("2026-06-01T00:00:00.000Z"),
       },

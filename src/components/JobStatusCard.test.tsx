@@ -36,19 +36,23 @@ describe("JobStatusCard", () => {
     cleanup();
   });
 
-  it("shows editable status, priority, and target completion fields", () => {
-    render(<JobStatusCard job={job} />);
+  it("shows a compact read-only project status summary for members", () => {
+    render(<JobStatusCard job={job} isAdmin={false} />);
 
     expect(screen.getByRole("heading", { name: "Project Status" })).toBeTruthy();
-    expect((screen.getByLabelText("Status") as HTMLSelectElement).value).toBe("ACTIVE");
-    expect((screen.getByLabelText("Priority") as HTMLSelectElement).value).toBe("3");
-    expect((screen.getByLabelText("Target Completion") as HTMLInputElement).value).toBe("2026-06-01");
+    expect(screen.getByText("Work In Progress")).toBeTruthy();
+    expect(screen.getByText("High")).toBeTruthy();
+    expect(screen.getByText("Jun 01, 2026")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit project status" })).toBeNull();
+    expect(screen.queryByLabelText("Status")).toBeNull();
   });
 
-  it("saves the three status fields without opening the full job manager", async () => {
+  it("lets admins expand compact controls and save management fields", async () => {
     const user = userEvent.setup();
-    render(<JobStatusCard job={job} />);
+    render(<JobStatusCard job={job} isAdmin />);
 
+    expect(screen.queryByLabelText("Status")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Edit project status" }));
     await user.selectOptions(screen.getByLabelText("Status"), "DELAY");
     await user.selectOptions(screen.getByLabelText("Priority"), "4");
     await user.clear(screen.getByLabelText("Target Completion"));

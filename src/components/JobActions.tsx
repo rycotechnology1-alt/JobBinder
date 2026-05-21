@@ -10,12 +10,14 @@ import { AssetCategorySelect } from "@/components/AssetCategorySelect";
 import { AssetUploadModal } from "@/components/AssetUploadModal";
 import { ExportModal } from "@/components/ExportModal";
 import { queueOfflineNote, queueOfflineTask } from "@/lib/offline-sync/queue";
+import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
 
 interface Props {
   jobId: string;
+  isAdmin?: boolean;
 }
 
-export function JobActions({ jobId }: Props) {
+export function JobActions({ jobId, isAdmin = false }: Props) {
   const [activeModal, setActiveModal] = useState<"NONE" | "NOTE" | "PROGRESS" | "UPLOAD" | "TASK" | "EXPORT">("NONE");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createTaskFromNote, setCreateTaskFromNote] = useState(false);
@@ -208,6 +210,20 @@ export function JobActions({ jobId }: Props) {
     <>
       {/* Desktop Buttons */}
       <div className="hidden md:flex justify-end gap-3 mb-4">
+        {isAdmin && (
+          <DeleteConfirmationButton
+            endpoint={`/api/jobs/${jobId}`}
+            label="Delete job"
+            title="Delete job"
+            message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
+            triggerText="Delete Job"
+            onDeleted={() => {
+              router.push("/");
+              router.refresh();
+            }}
+            className="gap-2"
+          />
+        )}
         <Button variant="outline" className="gap-2 border-zinc-800 text-zinc-300 hover:bg-zinc-800" onClick={() => setActiveModal("EXPORT")}>
           <Archive size={16}/> Export Job Package
         </Button>
@@ -248,6 +264,20 @@ export function JobActions({ jobId }: Props) {
         <Button variant="outline" className="w-full mt-3 gap-2 border-zinc-800 text-zinc-300 hover:bg-zinc-800 py-3 h-auto text-xs" onClick={() => setActiveModal("EXPORT")}>
           <Archive size={16} className="text-brand-light" /> Export Job Package
         </Button>
+        {isAdmin && (
+          <DeleteConfirmationButton
+            endpoint={`/api/jobs/${jobId}`}
+            label="Delete job"
+            title="Delete job"
+            message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
+            triggerText="Delete Job"
+            onDeleted={() => {
+              router.push("/");
+              router.refresh();
+            }}
+            className="mt-3 w-full gap-2 py-3 h-auto text-xs"
+          />
+        )}
       </div>
 
       <Modal isOpen={activeModal === "NOTE" || activeModal === "PROGRESS"} onClose={closeModal} title={activeModal === "PROGRESS" ? "Log Progress" : "Add Note"}>

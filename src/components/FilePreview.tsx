@@ -4,15 +4,18 @@ import { useEffect, useState } from "react";
 import { ExternalLink, FileIcon, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
 
 type Props = {
   fileId: string;
   type: "PHOTO" | "DOCUMENT";
   filename: string;
   category?: string | null;
+  canDelete?: boolean;
+  onDelete?: () => void;
 };
 
-export function FilePreview({ fileId, type, filename, category }: Props) {
+export function FilePreview({ fileId, type, filename, category, canDelete = false, onDelete }: Props) {
   const [accessUrl, setAccessUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,9 +70,20 @@ export function FilePreview({ fileId, type, filename, category }: Props) {
             </div>
             {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
           </div>
-          <Button type="button" variant="ghost" size="sm" onClick={openFile} disabled={!accessUrl} aria-label={`Open ${filename}`}>
-            <ExternalLink size={16} />
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={openFile} disabled={!accessUrl} aria-label={`Open ${filename}`}>
+              <ExternalLink size={16} />
+            </Button>
+            {canDelete && onDelete && (
+              <DeleteConfirmationButton
+                endpoint={`/api/files/${fileId}`}
+                label={`Delete ${filename}`}
+                title="Delete file"
+                message={`Delete ${filename} from this job? This cannot be undone.`}
+                onDeleted={onDelete}
+              />
+            )}
+          </div>
         </div>
       </div>
     );
@@ -90,10 +104,21 @@ export function FilePreview({ fileId, type, filename, category }: Props) {
           {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         </div>
       </div>
-      <Button type="button" variant="secondary" size="sm" onClick={openFile} disabled={!accessUrl} className="gap-2 shrink-0">
-        <ExternalLink size={16} />
-        View
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={openFile} disabled={!accessUrl} className="gap-2">
+          <ExternalLink size={16} />
+          View
+        </Button>
+        {canDelete && onDelete && (
+          <DeleteConfirmationButton
+            endpoint={`/api/files/${fileId}`}
+            label={`Delete ${filename}`}
+            title="Delete file"
+            message={`Delete ${filename} from this job? This cannot be undone.`}
+            onDeleted={onDelete}
+          />
+        )}
+      </div>
     </div>
   );
 }

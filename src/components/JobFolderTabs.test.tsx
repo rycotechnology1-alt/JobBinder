@@ -14,10 +14,21 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/FilePreview", () => ({
-  FilePreview: ({ filename, category }: { filename: string; category?: string | null }) => (
+  FilePreview: ({
+    filename,
+    category,
+    canDelete,
+    onDelete,
+  }: {
+    filename: string;
+    category?: string | null;
+    canDelete?: boolean;
+    onDelete?: () => void;
+  }) => (
     <div>
       <span>{filename}</span>
       {category && <span>{category}</span>}
+      {canDelete && <button type="button" onClick={onDelete}>Delete {filename}</button>}
     </div>
   ),
 }));
@@ -92,7 +103,7 @@ describe("JobFolderTabs", () => {
 
   it("switches to files and filters by category", async () => {
     const user = userEvent.setup();
-    render(<JobFolderTabs notes={[]} files={files} tasks={tasks} />);
+    render(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin={false} />);
 
     expect(screen.getByRole("button", { name: "Files (2)" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Files (2)" }));
@@ -109,7 +120,7 @@ describe("JobFolderTabs", () => {
 
   it("separates tasks from punch list items and progresses statuses optimistically", async () => {
     const user = userEvent.setup();
-    render(<JobFolderTabs notes={[]} files={files} tasks={tasks} />);
+    render(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin={false} />);
 
     await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
     expect(screen.getByRole("heading", { name: "Tasks" })).toBeTruthy();
@@ -163,6 +174,25 @@ describe("JobFolderTabs", () => {
     expect(refresh).toHaveBeenCalledTimes(3);
   });
 
+  it("shows delete controls only for admins and confirms task deletion", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin={false} />);
+
+    await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
+    expect(screen.queryByRole("button", { name: "Delete Install trim" })).toBeNull();
+
+    rerender(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin />);
+    await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
+    await user.click(screen.getByRole("button", { name: "Delete Install trim" }));
+    expect(screen.getByRole("dialog", { name: "Delete task" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith("/api/tasks/task-1", expect.objectContaining({ method: "DELETE" }));
+    });
+    expect(refresh).toHaveBeenCalled();
+  });
+
   it("reflects newly refreshed task props without a full page reload", async () => {
     const user = userEvent.setup();
     const newTask = {
@@ -175,11 +205,11 @@ describe("JobFolderTabs", () => {
       dueDate: null,
       createdAt: "2026-05-10T12:00:00.000Z",
     };
-    const { rerender } = render(<JobFolderTabs notes={[]} files={[]} tasks={[]} />);
+    const { rerender } = render(<JobFolderTabs notes={[]} files={[]} tasks={[]} isAdmin={false} />);
 
     expect(screen.getByRole("button", { name: "Tasks (0)" })).toBeTruthy();
 
-    rerender(<JobFolderTabs notes={[]} files={[]} tasks={[newTask]} />);
+    rerender(<JobFolderTabs notes={[]} files={[]} tasks={[newTask]} isAdmin={false} />);
 
     expect(screen.getByRole("button", { name: "Tasks (1)" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Tasks (1)" }));

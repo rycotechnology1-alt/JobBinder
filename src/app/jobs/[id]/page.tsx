@@ -28,6 +28,8 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
 
   if (!job) return notFound();
 
+  const isAdmin = user.role === "ADMIN";
+
   const feedNotes = job.notes.map((note) => ({
     id: note.id,
     type: note.type,
@@ -68,6 +70,7 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
           <h1 className="text-2xl md:text-3xl font-bold">{job.title}</h1>
         </div>
         <ManageJobDialog
+          isAdmin={isAdmin}
           job={{
             id: job.id,
             title: job.title,
@@ -90,6 +93,7 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="space-y-6 lg:col-span-1">
           <JobStatusCard
+            isAdmin={isAdmin}
             job={{
               id: job.id,
               status: job.status,
@@ -113,11 +117,11 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
         </div>
 
         <div className="lg:col-span-2 space-y-6">
-          <JobActions jobId={job.id} />
+          <JobActions jobId={job.id} isAdmin={isAdmin} />
 
           <Card>
             <CardContent className="p-0">
-              <JobFolderTabs notes={feedNotes} files={feedFiles} tasks={taskItems} />
+              <JobFolderTabs notes={feedNotes} files={feedFiles} tasks={taskItems} isAdmin={isAdmin} />
             </CardContent>
           </Card>
         </div>
