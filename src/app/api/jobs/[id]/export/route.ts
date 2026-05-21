@@ -36,14 +36,25 @@ export async function POST(
       groupByCategory: body.groupByCategory !== false,
     };
 
+    const destinationKey = options.destination.toUpperCase();
+
+    // Compute expiration for share links (defaults to 7 days; allowed: 7, 30, 90)
+    let expiresAt: Date | null = null;
+    if (destinationKey === "SHARE_LINK") {
+      const requested = Number(body.expirationDays);
+      const days = [7, 30, 90].includes(requested) ? requested : 7;
+      expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    }
+
     // Create a new Export record with status PROCESSING
     const exportRecord = await prisma.export.create({
       data: {
         jobId,
         createdById: user.id,
-        destination: options.destination.toUpperCase(),
+        destination: destinationKey,
         status: "PROCESSING",
         optionsJson: JSON.stringify(options),
+        expiresAt,
       },
     });
 

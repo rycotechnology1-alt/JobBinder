@@ -432,155 +432,477 @@ export class ExportJobPackageService {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    let page = pdfDoc.addPage([600, 800]);
-    let currentY = 750;
+    const pageHeight = 840;
+    let page = pdfDoc.addPage([600, pageHeight]);
+    let currentY = 740;
+
+    const addNewPage = () => {
+      page = pdfDoc.addPage([600, pageHeight]);
+      currentY = 780;
+
+      // Draw running header separator
+      page.drawLine({
+        start: { x: 50, y: 795 },
+        end: { x: 550, y: 795 },
+        thickness: 0.4,
+        color: rgb(0.8, 0.8, 0.8),
+      });
+
+      // Draw running header text
+      page.drawText(`HANDOFF SUMMARY  |  ${manifest.jobBucket.name.toUpperCase()}`, {
+        x: 50,
+        y: 802,
+        size: 7.5,
+        font: fontBold,
+        color: rgb(0.4, 0.5, 0.6),
+      });
+    };
 
     const checkPageSpace = (needed: number) => {
-      if (currentY - needed < 50) {
-        page = pdfDoc.addPage([600, 800]);
-        currentY = 750;
+      if (currentY - needed < 60) {
+        addNewPage();
       }
     };
 
-    const drawHeader = (text: string) => {
-      checkPageSpace(40);
-      currentY -= 15;
-      page.drawText(text, {
-        x: 50,
-        y: currentY,
-        size: 14,
-        font: fontBold,
-        color: rgb(0.12, 0.23, 0.35),
-      });
+    const drawSectionHeader = (title: string) => {
+      checkPageSpace(50);
       currentY -= 20;
-      // Draw underline
-      page.drawLine({
-        start: { x: 50, y: currentY + 12 },
-        end: { x: 550, y: currentY + 12 },
-        thickness: 1,
-        color: rgb(0.85, 0.85, 0.85),
+
+      // Draw left decorative bar
+      page.drawRectangle({
+        x: 50,
+        y: currentY - 2,
+        width: 4,
+        height: 14,
+        color: rgb(0.08, 0.36, 0.56),
       });
+
+      page.drawText(title.toUpperCase(), {
+        x: 60,
+        y: currentY,
+        size: 10.5,
+        font: fontBold,
+        color: rgb(0.09, 0.18, 0.27),
+      });
+
+      currentY -= 8;
+
+      // Divider line
+      page.drawLine({
+        start: { x: 50, y: currentY },
+        end: { x: 550, y: currentY },
+        thickness: 0.5,
+        color: rgb(0.85, 0.87, 0.9),
+      });
+
+      currentY -= 12;
     };
 
-    const drawText = (text: string, size = 10, isBold = false, color = rgb(0.2, 0.2, 0.2)) => {
-      const maxChars = 85;
-      const paragraphs = text.split("\n");
+    const drawLogCard = (
+      dateStr: string,
+      author: string,
+      category: string,
+      body: string,
+      accentColor: [number, number, number],
+      tagBgColor: [number, number, number]
+    ) => {
+      const maxBodyChars = 85;
+      const paragraphs = body.split("\n");
+      const wrappedLines: string[] = [];
 
       for (const p of paragraphs) {
         const words = p.split(" ");
-        let currentLine = "";
-
+        let line = "";
         for (const w of words) {
-          if ((currentLine + " " + w).length > maxChars) {
-            checkPageSpace(16);
-            page.drawText(currentLine.trim(), {
-              x: 50,
-              y: currentY,
-              size,
-              font: isBold ? fontBold : font,
-              color,
-            });
-            currentY -= 16;
-            currentLine = w;
+          if ((line + " " + w).length > maxBodyChars) {
+            wrappedLines.push(line.trim());
+            line = w;
           } else {
-            currentLine += (currentLine ? " " : "") + w;
+            line += (line ? " " : "") + w;
           }
         }
-
-        if (currentLine) {
-          checkPageSpace(16);
-          page.drawText(currentLine.trim(), {
-            x: 50,
-            y: currentY,
-            size,
-            font: isBold ? fontBold : font,
-            color,
-          });
-          currentY -= 16;
-        }
+        if (line) wrappedLines.push(line.trim());
       }
+
+      const lineHeight = 12;
+      const topMargin = 22;
+      const bottomMargin = 12;
+      const totalBodyHeight = wrappedLines.length * lineHeight;
+      const cardHeight = topMargin + totalBodyHeight + bottomMargin;
+
+      checkPageSpace(cardHeight + 10);
+
+      // Card Background
+      page.drawRectangle({
+        x: 50,
+        y: currentY - cardHeight,
+        width: 500,
+        height: cardHeight,
+        color: rgb(0.98, 0.98, 0.99),
+        borderColor: rgb(0.88, 0.9, 0.93),
+        borderWidth: 0.5,
+      });
+
+      // Left Accent Border
+      page.drawLine({
+        start: { x: 50, y: currentY },
+        end: { x: 50, y: currentY - cardHeight },
+        thickness: 3.5,
+        color: rgb(...accentColor),
+      });
+
+      // Metadata text
+      page.drawText(`${dateStr}  •  Logged by ${author}`, {
+        x: 65,
+        y: currentY - 14,
+        size: 8.5,
+        font: fontBold,
+        color: rgb(0.2, 0.3, 0.4),
+      });
+
+      // Upper Right Category Pill Tag
+      const catTag = category.toUpperCase();
+      const tagWidth = fontBold.widthOfTextAtSize(catTag, 6.5);
+      page.drawRectangle({
+        x: 540 - tagWidth - 8,
+        y: currentY - 16,
+        width: tagWidth + 8,
+        height: 11,
+        color: rgb(...tagBgColor),
+      });
+      page.drawText(catTag, {
+        x: 540 - tagWidth - 4,
+        y: currentY - 13.5,
+        size: 6.5,
+        font: fontBold,
+        color: rgb(...accentColor),
+      });
+
+      // Body Text lines
+      let textY = currentY - topMargin - 8;
+      for (const line of wrappedLines) {
+        page.drawText(line, {
+          x: 65,
+          y: textY,
+          size: 8.5,
+          font: font,
+          color: rgb(0.25, 0.25, 0.25),
+        });
+        textY -= lineHeight;
+      }
+
+      currentY -= cardHeight + 8;
     };
 
-    // --- TITLE HEADER ---
-    page.drawText("JOB HANDOFF SUMMARY", {
-      x: 50,
-      y: currentY,
-      size: 18,
-      font: fontBold,
-      color: rgb(0.09, 0.18, 0.27),
+    // --- PAGE 1: TITLE BANNER ---
+    page.drawRectangle({
+      x: 0,
+      y: 770,
+      width: 600,
+      height: 70,
+      color: rgb(0.08, 0.16, 0.26),
     });
-    currentY -= 30;
+    page.drawRectangle({
+      x: 0,
+      y: 770,
+      width: 8,
+      height: 70,
+      color: rgb(0.05, 0.58, 0.53), // Teal Accent
+    });
+    page.drawText("PROJECT HANDOFF SUMMARY", {
+      x: 50,
+      y: 810,
+      size: 16,
+      font: fontBold,
+      color: rgb(1, 1, 1),
+    });
+    page.drawText("JobBinder Handoff Documentation Package", {
+      x: 50,
+      y: 792,
+      size: 10,
+      font: font,
+      color: rgb(0.7, 0.85, 0.82),
+    });
 
-    // --- METADATA ---
-    drawText(`Job Name: ${manifest.jobBucket.name}`, 11, true);
-    if (manifest.jobBucket.jobNumber) {
-      drawText(`Job Number: ${manifest.jobBucket.jobNumber}`, 11, true);
-    }
-    if (manifest.jobBucket.poNumber) {
-      drawText(`PO Number: ${manifest.jobBucket.poNumber}`, 10, false);
-    }
-    if (manifest.jobBucket.customerName) {
-      drawText(`Customer: ${manifest.jobBucket.customerName}`, 10, false);
-    }
-    drawText(`Export Date: ${format(new Date(manifest.export.generatedAt), "PPP")}`, 10, false);
-    drawText(`Exported By: ${manifest.export.generatedBy}`, 10, false);
-    if (manifest.export.dateRange) {
-      drawText(`Date Range Selected: ${manifest.export.dateRange.start} to ${manifest.export.dateRange.end}`, 10, false);
-    } else {
-      drawText("Date Range: All Time", 10, false);
-    }
+    // --- METADATA CONTAINER CARD ---
+    checkPageSpace(105);
     currentY -= 20;
 
-    // --- CATEGORY SUMMARY STATISTICS ---
-    drawHeader("Package Item Breakdown");
+    page.drawRectangle({
+      x: 50,
+      y: currentY - 95,
+      width: 500,
+      height: 95,
+      color: rgb(0.97, 0.98, 0.99),
+      borderColor: rgb(0.88, 0.9, 0.93),
+      borderWidth: 1,
+    });
+    page.drawLine({
+      start: { x: 50, y: currentY },
+      end: { x: 50, y: currentY - 95 },
+      thickness: 3.5,
+      color: rgb(0.08, 0.36, 0.56),
+    });
+
+    const drawMetaRow = (label: string, val: string, lx: number, rx: number, y: number) => {
+      page.drawText(label, { x: lx, y, size: 8.5, font: fontBold, color: rgb(0.3, 0.4, 0.5) });
+      page.drawText(val, { x: rx, y, size: 8.5, font: font, color: rgb(0.1, 0.1, 0.1) });
+    };
+
+    let cardY = currentY - 18;
+    drawMetaRow("JOB NAME:", manifest.jobBucket.name.substring(0, 38), 65, 140, cardY);
+    drawMetaRow("EXPORT DATE:", format(new Date(manifest.export.generatedAt), "PPP"), 310, 400, cardY);
+
+    cardY -= 16;
+    drawMetaRow("JOB NUMBER:", manifest.jobBucket.jobNumber || "N/A", 65, 140, cardY);
+    drawMetaRow("EXPORTED BY:", manifest.export.generatedBy.substring(0, 25), 310, 400, cardY);
+
+    cardY -= 16;
+    drawMetaRow("CUSTOMER:", manifest.jobBucket.customerName || "N/A", 65, 140, cardY);
+    const dateRangeStr = manifest.export.dateRange
+      ? `${manifest.export.dateRange.start} to ${manifest.export.dateRange.end}`
+      : "All Time";
+    drawMetaRow("DATE RANGE:", dateRangeStr, 310, 400, cardY);
+
+    cardY -= 16;
+    drawMetaRow("PO NUMBER:", manifest.jobBucket.poNumber || "N/A", 65, 140, cardY);
+
+    const status = (manifest.jobBucket.status || "active").toUpperCase();
+    const statusColorMap: Record<string, { bg: [number, number, number]; txt: [number, number, number] }> = {
+      ACTIVE: { bg: [0.85, 0.95, 0.9], txt: [0.1, 0.4, 0.2] },
+      COMPLETED: { bg: [0.85, 0.9, 0.98], txt: [0.15, 0.25, 0.6] },
+      default: { bg: [0.92, 0.92, 0.92], txt: [0.3, 0.3, 0.3] },
+    };
+    const badgeStyles = statusColorMap[status] || statusColorMap.default;
+
+    page.drawText("STATUS:", { x: 310, y: cardY, size: 8.5, font: fontBold, color: rgb(0.3, 0.4, 0.5) });
+    page.drawRectangle({
+      x: 400,
+      y: cardY - 3,
+      width: 70,
+      height: 14,
+      color: rgb(...badgeStyles.bg),
+    });
+    page.drawText(status, {
+      x: 400 + (70 - fontBold.widthOfTextAtSize(status, 7.5)) / 2,
+      y: cardY,
+      size: 7.5,
+      font: fontBold,
+      color: rgb(...badgeStyles.txt),
+    });
+
+    currentY -= 115;
+
+    // --- PACKAGE BREAKDOWN ---
+    drawSectionHeader("Package Item Breakdown");
+
     const counts = manifest.items.reduce<Record<string, number>>((acc, item) => {
       acc[item.category] = (acc[item.category] || 0) + 1;
       return acc;
     }, {});
 
-    drawText(`Total Items Exported: ${manifest.items.length}`, 11, true);
-    currentY -= 5;
-    for (const [cat, cnt] of Object.entries(counts)) {
-      drawText(`- ${cat}: ${cnt} items`, 10);
-    }
-    currentY -= 20;
+    checkPageSpace(45);
+    const tableHeaderY = currentY;
+    page.drawRectangle({
+      x: 50,
+      y: tableHeaderY - 18,
+      width: 500,
+      height: 18,
+      color: rgb(0.9, 0.92, 0.95),
+    });
 
-    // --- PUNCH LIST SUMMARY ---
+    page.drawText("CATEGORY", { x: 60, y: tableHeaderY - 13, size: 8.5, font: fontBold, color: rgb(0.15, 0.25, 0.35) });
+    page.drawText("COUNT", { x: 220, y: tableHeaderY - 13, size: 8.5, font: fontBold, color: rgb(0.15, 0.25, 0.35) });
+    page.drawText("ZIP FOLDER LOCATION", { x: 320, y: tableHeaderY - 13, size: 8.5, font: fontBold, color: rgb(0.15, 0.25, 0.35) });
+
+    currentY -= 18;
+
+    const folderMappings: Record<string, string> = {
+      Photos: "01 - Photos/",
+      "Punch List": "02 - Punch List/",
+      "Progress Updates": "03 - Progress Updates/",
+      "Daily Reports": "04 - Daily Reports/",
+      "Material Tickets": "05 - Material Tickets/",
+      Notes: "06 - Notes/",
+      Other: "99 - Other/",
+    };
+
+    let index = 0;
+    let totalCount = 0;
+
+    for (const [cat, cnt] of Object.entries(counts)) {
+      checkPageSpace(20);
+      totalCount += cnt;
+      const rowBg = index % 2 === 0 ? rgb(0.98, 0.99, 1.0) : rgb(1, 1, 1);
+
+      page.drawRectangle({
+        x: 50,
+        y: currentY - 16,
+        width: 500,
+        height: 16,
+        color: rowBg,
+      });
+
+      page.drawText(cat, { x: 60, y: currentY - 11, size: 8.5, font: font, color: rgb(0.2, 0.2, 0.2) });
+      page.drawText(`${cnt} item${cnt !== 1 ? "s" : ""}`, { x: 220, y: currentY - 11, size: 8.5, font: font, color: rgb(0.2, 0.2, 0.2) });
+      page.drawText(folderMappings[cat] || "root/", { x: 320, y: currentY - 11, size: 8.5, font: font, color: rgb(0.4, 0.4, 0.4) });
+
+      page.drawLine({
+        start: { x: 50, y: currentY - 16 },
+        end: { x: 550, y: currentY - 16 },
+        thickness: 0.3,
+        color: rgb(0.9, 0.9, 0.9),
+      });
+
+      currentY -= 16;
+      index++;
+    }
+
+    checkPageSpace(20);
+    page.drawRectangle({
+      x: 50,
+      y: currentY - 18,
+      width: 500,
+      height: 18,
+      color: rgb(0.95, 0.96, 0.97),
+    });
+    page.drawText("TOTAL ITEMS EXPORTED", { x: 60, y: currentY - 13, size: 8.5, font: fontBold, color: rgb(0.09, 0.18, 0.27) });
+    page.drawText(`${totalCount} items`, { x: 220, y: currentY - 13, size: 8.5, font: fontBold, color: rgb(0.09, 0.18, 0.27) });
+    page.drawText("-", { x: 320, y: currentY - 13, size: 8.5, font: font, color: rgb(0.5, 0.5, 0.5) });
+
+    currentY -= 30;
+
+    // --- PUNCH LIST ---
     const punchListItems = manifest.items.filter((i) => i.category === "Punch List" && i.itemType === "TASK");
     if (punchListItems.length > 0) {
-      drawHeader("Punch List Items");
+      drawSectionHeader("Punch List Items");
+
       for (const item of punchListItems) {
+        checkPageSpace(30);
         const dateFormatted = format(new Date(item.createdAt), "yyyy-MM-dd");
-        const statusText = item.description ? ` - ${item.description}` : "";
-        drawText(`[ ] ${dateFormatted}: ${item.title}${statusText}`, 10);
-        currentY -= 5;
+
+        page.drawRectangle({
+          x: 55,
+          y: currentY - 10,
+          width: 10,
+          height: 10,
+          borderColor: rgb(0.4, 0.5, 0.6),
+          borderWidth: 1,
+        });
+
+        page.drawText(`${dateFormatted} - ${item.title}`, {
+          x: 75,
+          y: currentY - 9,
+          size: 9,
+          font: fontBold,
+          color: rgb(0.15, 0.2, 0.25),
+        });
+
+        currentY -= 15;
+
+        if (item.description) {
+          const maxDescWidth = 80;
+          const descParagraphs = item.description.split("\n");
+          for (const dp of descParagraphs) {
+            const words = dp.split(" ");
+            let line = "";
+            for (const w of words) {
+              if ((line + " " + w).length > maxDescWidth) {
+                checkPageSpace(14);
+                page.drawText(line.trim(), {
+                  x: 75,
+                  y: currentY - 7,
+                  size: 8,
+                  font: font,
+                  color: rgb(0.45, 0.45, 0.45),
+                });
+                currentY -= 11;
+                line = w;
+              } else {
+                line += (line ? " " : "") + w;
+              }
+            }
+            if (line) {
+              checkPageSpace(14);
+              page.drawText(line.trim(), {
+                x: 75,
+                y: currentY - 7,
+                size: 8,
+                font: font,
+                color: rgb(0.45, 0.45, 0.45),
+              });
+              currentY -= 11;
+            }
+          }
+        }
+        currentY -= 4;
       }
-      currentY -= 15;
+      currentY -= 10;
     }
 
-    // --- PROGRESS UPDATES SUMMARY ---
+    // --- PROGRESS LOGS ---
     const progressUpdates = manifest.items.filter((i) => i.category === "Progress Updates" && i.itemType === "NOTE");
     if (progressUpdates.length > 0) {
-      drawHeader("Progress Update Logs");
+      drawSectionHeader("Progress Update Logs");
       for (const item of progressUpdates) {
         const dateFormatted = format(new Date(item.createdAt), "yyyy-MM-dd");
-        drawText(`${dateFormatted} - Logged by ${item.createdBy}:`, 10, true);
-        drawText(`${item.description}`, 9, false, rgb(0.3, 0.3, 0.3));
-        currentY -= 10;
+        drawLogCard(
+          dateFormatted,
+          item.createdBy,
+          item.category,
+          item.description || "No text description provided.",
+          [0.06, 0.6, 0.54],
+          [0.85, 0.95, 0.93]
+        );
       }
-      currentY -= 15;
     }
 
-    // --- NOTES SUMMARY ---
+    // --- GENERAL FIELD NOTES ---
     const generalNotes = manifest.items.filter((i) => i.category === "Notes" && i.itemType === "NOTE");
     if (generalNotes.length > 0) {
-      drawHeader("General Field Notes");
+      drawSectionHeader("General Field Notes");
       for (const item of generalNotes) {
         const dateFormatted = format(new Date(item.createdAt), "yyyy-MM-dd");
-        drawText(`${dateFormatted} - Author: ${item.createdBy} [Category: ${item.title}]:`, 10, true);
-        drawText(`${item.description}`, 9, false, rgb(0.3, 0.3, 0.3));
-        currentY -= 10;
+        drawLogCard(
+          dateFormatted,
+          item.createdBy,
+          item.title || "Field Note",
+          item.description || "No content provided.",
+          [0.12, 0.36, 0.56],
+          [0.88, 0.92, 0.96]
+        );
       }
+    }
+
+    // --- GENERATE RUNNING FOOTERS ---
+    const pages = pdfDoc.getPages();
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i];
+
+      p.drawLine({
+        start: { x: 50, y: 45 },
+        end: { x: 550, y: 45 },
+        thickness: 0.5,
+        color: rgb(0.85, 0.85, 0.85),
+      });
+
+      const footerText = `Generated on ${format(new Date(manifest.export.generatedAt), "PPP")} • JobBinder Handoff`;
+      p.drawText(footerText, {
+        x: 50,
+        y: 32,
+        size: 7,
+        font: font,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+
+      const pageText = `Page ${i + 1} of ${pages.length}`;
+      p.drawText(pageText, {
+        x: 550 - font.widthOfTextAtSize(pageText, 7),
+        y: 32,
+        size: 7,
+        font: font,
+        color: rgb(0.5, 0.5, 0.5),
+      });
     }
 
     const bytes = await pdfDoc.save();

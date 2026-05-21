@@ -13,6 +13,9 @@ import {
   FolderTree,
   FileSpreadsheet,
   RefreshCw,
+  Link2,
+  Copy,
+  Check,
 } from "lucide-react";
 
 interface Props {
@@ -29,16 +32,20 @@ type ExportRecord = {
   status: string;
   fileName: string | null;
   errorMessage: string | null;
+  destination?: string | null;
+  expiresAt?: string | null;
 };
 
 export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
   const [exportState, setExportState] = useState<ExportState>("IDLE");
   const [activeExport, setActiveExport] = useState<ExportRecord | null>(null);
   const [destination, setDestination] = useState<"zip" | "share_link" | "google_drive" | "onedrive">("zip");
+  const [expirationDays, setExpirationDays] = useState<7 | 30 | 90>(7);
   const [dateRangeType, setDateRangeType] = useState<"all" | "custom">("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Category filters
   const [categories, setCategories] = useState({
@@ -101,6 +108,7 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
       setExportState("IDLE");
       setActiveExport(null);
       setSubmitError(null);
+      setLinkCopied(false);
     }
   }, [isOpen]);
 
@@ -131,6 +139,7 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
 
     const payload = {
       destination,
+      expirationDays: destination === "share_link" ? expirationDays : undefined,
       dateRange:
         dateRangeType === "custom"
           ? {
@@ -170,6 +179,21 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
     window.location.href = `/api/exports/${activeExport.id}/download`;
   };
 
+  const shareUrl = activeExport?.id
+    ? (typeof window !== "undefined" ? window.location.origin : "") + `/share/${activeExport.id}`
+    : "";
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error("Could not copy link to clipboard:", err);
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Export Job Package" className="max-w-2xl">
       {exportState === "IDLE" && (
@@ -192,12 +216,15 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
               </button>
               <button
                 type="button"
-                disabled
-                className="flex flex-col items-center justify-center p-3 rounded-xl border border-zinc-800 bg-zinc-950/20 text-zinc-600 text-xs gap-2 cursor-not-allowed opacity-50"
+                onClick={() => setDestination("share_link")}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs gap-2 transition-all ${
+                  destination === "share_link"
+                    ? "border-brand bg-brand/5 text-brand"
+                    : "border-zinc-800 bg-zinc-900/30 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                }`}
               >
-                <Cloud size={20} />
+                <Link2 size={20} />
                 Share Link
-                <span className="text-[10px] text-zinc-500 font-normal">Coming soon</span>
               </button>
               <button
                 type="button"
@@ -218,6 +245,36 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
                 <span className="text-[10px] text-zinc-500 font-normal">Coming soon</span>
               </button>
             </div>
+
+            {destination === "share_link" && (
+              <div className="rounded-xl border border-brand/20 bg-brand/5 p-4 animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
+                <div className="flex items-start gap-3">
+                  <Link2 size={16} className="text-brand mt-0.5 shrink-0" />
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-zinc-200">Public Share Link</p>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      A secure, unguessable link will be generated. Anyone with the link can download the ZIP package
+                      without signing in to JobBinder.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="expirationDays" className="block text-xs font-semibold text-zinc-500 mb-1.5">
+                    Link Expiration
+                  </label>
+                  <select
+                    id="expirationDays"
+                    value={expirationDays}
+                    onChange={(e) => setExpirationDays(Number(e.target.value) as 7 | 30 | 90)}
+                    className="w-full h-11 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-sm text-zinc-100 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  >
+                    <option value={7}>7 Days</option>
+                    <option value={30}>30 Days</option>
+                    <option value={90}>90 Days</option>
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Date Range Selection */}
@@ -422,10 +479,21 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
             <FileCheck size={36} />
           </div>
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-zinc-50">Export Package Ready!</h3>
+            <h3 className="text-lg font-semibold text-zinc-50">
+              {destination === "share_link" ? "Share Link Ready!" : "Export Package Ready!"}
+            </h3>
             <p className="text-sm text-zinc-400 max-w-md">
-              The project handoff package for <span className="text-zinc-200 font-semibold">{jobTitle}</span> was
-              successfully generated and is ready to save.
+              {destination === "share_link" ? (
+                <>
+                  The public share link for <span className="text-zinc-200 font-semibold">{jobTitle}</span> is ready.
+                  Anyone with the link can download the package until it expires.
+                </>
+              ) : (
+                <>
+                  The project handoff package for <span className="text-zinc-200 font-semibold">{jobTitle}</span> was
+                  successfully generated and is ready to save.
+                </>
+              )}
             </p>
             {activeExport?.fileName && (
               <span className="inline-block mt-2 font-mono text-xs px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded text-zinc-400">
@@ -434,14 +502,54 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 pt-6 w-full max-w-md justify-center border-t border-zinc-800/50">
-            <Button variant="secondary" onClick={() => setExportState("IDLE")} className="gap-2">
-              <RefreshCw size={16} /> Export Again
-            </Button>
-            <Button onClick={handleDownload} className="gap-2 font-semibold bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/20">
-              <Download size={16} /> Download ZIP
-            </Button>
-          </div>
+          {destination === "share_link" ? (
+            <div className="w-full max-w-md space-y-4">
+              <div className="flex items-stretch gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareUrl}
+                  onClick={(e) => e.currentTarget.select()}
+                  className="flex-1 h-11 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-xs font-mono text-zinc-200 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                />
+                <Button
+                  onClick={handleCopyLink}
+                  className={`gap-2 font-semibold shrink-0 ${
+                    linkCopied ? "bg-emerald-600 hover:bg-emerald-500" : ""
+                  }`}
+                >
+                  {linkCopied ? (
+                    <>
+                      <Check size={16} /> Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={16} /> Copy Link
+                    </>
+                  )}
+                </Button>
+              </div>
+              {activeExport?.expiresAt && (
+                <p className="text-[11px] text-zinc-500">
+                  Expires {new Date(activeExport.expiresAt).toLocaleString()}
+                </p>
+              )}
+              <div className="flex justify-center pt-2 border-t border-zinc-800/50">
+                <Button variant="secondary" onClick={() => setExportState("IDLE")} className="gap-2 mt-4">
+                  <RefreshCw size={16} /> Export Again
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-3 pt-6 w-full max-w-md justify-center border-t border-zinc-800/50">
+              <Button variant="secondary" onClick={() => setExportState("IDLE")} className="gap-2">
+                <RefreshCw size={16} /> Export Again
+              </Button>
+              <Button onClick={handleDownload} className="gap-2 font-semibold bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/20">
+                <Download size={16} /> Download ZIP
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
