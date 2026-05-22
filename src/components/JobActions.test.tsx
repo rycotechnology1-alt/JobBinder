@@ -210,6 +210,7 @@ describe("JobActions", () => {
     expect(screen.queryByRole("button", { name: "Delete job" })).toBeNull();
 
     rerender(<JobActions jobId="job-1" isAdmin />);
+    expect(screen.queryByText("Delete Job")).toBeNull();
     await user.click(screen.getAllByRole("button", { name: "Delete job" })[0]);
     expect(screen.getByRole("dialog", { name: "Delete job" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Delete" }));

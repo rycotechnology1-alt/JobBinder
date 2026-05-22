@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { cn } from "@/lib/utils";
 
 type Props = {
   endpoint: string;
@@ -56,8 +57,14 @@ export function DeleteConfirmationButton({
         variant="danger"
         size="sm"
         aria-label={label}
+        title={label}
         onClick={() => setIsOpen(true)}
-        className={className}
+        className={cn(
+          triggerText
+            ? "gap-2"
+            : "h-8 w-8 rounded-md bg-red-500/5 px-0 py-0 text-red-400 hover:bg-red-500/10",
+          className,
+        )}
       >
         <Trash2 size={15} />
         {triggerText}

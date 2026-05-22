@@ -183,6 +183,7 @@ describe("JobFolderTabs", () => {
 
     rerender(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin />);
     await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
+    expect(screen.queryByText("Delete Install trim")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Delete Install trim" }));
     expect(screen.getByRole("dialog", { name: "Delete task" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Delete" }));

@@ -209,36 +209,40 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
   return (
     <>
       {/* Desktop Buttons */}
-      <div className="hidden md:flex justify-end gap-3 mb-4">
+      <div className="hidden md:flex flex-wrap items-center justify-end gap-2 mb-4">
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Export Job Package"
+          className="gap-2 whitespace-nowrap border-zinc-800 text-zinc-300 hover:bg-zinc-800"
+          onClick={() => setActiveModal("EXPORT")}
+        >
+          <Archive size={15}/> Export
+        </Button>
+        <Button variant="secondary" size="sm" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("UPLOAD")}>
+          <Camera size={15}/> Upload
+        </Button>
+        <Button variant="secondary" size="sm" aria-label="Quick Task" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("TASK")}>
+          <ListTodo size={15}/> Task
+        </Button>
+        <Button variant="secondary" size="sm" aria-label="Log Progress" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("PROGRESS")}>
+          <ClipboardList size={15}/> Progress
+        </Button>
+        <Button size="sm" aria-label="Add Note" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("NOTE")}>
+          <FileText size={15}/> Note
+        </Button>
         {isAdmin && (
           <DeleteConfirmationButton
             endpoint={`/api/jobs/${jobId}`}
             label="Delete job"
             title="Delete job"
             message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
-            triggerText="Delete Job"
             onDeleted={() => {
               router.push("/");
               router.refresh();
             }}
-            className="gap-2"
           />
         )}
-        <Button variant="outline" className="gap-2 border-zinc-800 text-zinc-300 hover:bg-zinc-800" onClick={() => setActiveModal("EXPORT")}>
-          <Archive size={16}/> Export Job Package
-        </Button>
-        <Button variant="secondary" className="gap-2" onClick={() => setActiveModal("UPLOAD")}>
-          <Camera size={16}/> Upload
-        </Button>
-        <Button variant="secondary" className="gap-2" onClick={() => setActiveModal("TASK")}>
-          <ListTodo size={16}/> Quick Task
-        </Button>
-        <Button variant="secondary" className="gap-2" onClick={() => setActiveModal("PROGRESS")}>
-          <ClipboardList size={16}/> Log Progress
-        </Button>
-        <Button className="gap-2" onClick={() => setActiveModal("NOTE")}>
-          <FileText size={16}/> Add Note
-        </Button>
       </div>
 
       {/* Mobile Buttons */}
@@ -265,18 +269,18 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
           <Archive size={16} className="text-brand-light" /> Export Job Package
         </Button>
         {isAdmin && (
-          <DeleteConfirmationButton
-            endpoint={`/api/jobs/${jobId}`}
-            label="Delete job"
-            title="Delete job"
-            message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
-            triggerText="Delete Job"
-            onDeleted={() => {
-              router.push("/");
-              router.refresh();
-            }}
-            className="mt-3 w-full gap-2 py-3 h-auto text-xs"
-          />
+          <div className="mt-3 flex justify-end">
+            <DeleteConfirmationButton
+              endpoint={`/api/jobs/${jobId}`}
+              label="Delete job"
+              title="Delete job"
+              message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
+              onDeleted={() => {
+                router.push("/");
+                router.refresh();
+              }}
+            />
+          </div>
         )}
       </div>
 
