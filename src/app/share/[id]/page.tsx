@@ -7,8 +7,13 @@ type Props = {
 
 export const dynamic = "force-dynamic";
 
+function getCurrentTimestamp() {
+  return Date.now();
+}
+
 export default async function ShareDownloadPage({ params }: Props) {
   const { id } = await params;
+  const currentTimestamp = getCurrentTimestamp();
 
   const exportRecord = await prisma.export.findFirst({
     where: { id },
@@ -25,7 +30,7 @@ export default async function ShareDownloadPage({ params }: Props) {
     exportRecord.status !== "READY";
 
   const isExpired =
-    exportRecord?.expiresAt && exportRecord.expiresAt.getTime() < Date.now();
+    exportRecord?.expiresAt && exportRecord.expiresAt.getTime() < currentTimestamp;
 
   if (isMissing || isExpired) {
     return (
@@ -56,7 +61,7 @@ export default async function ShareDownloadPage({ params }: Props) {
   const company = job.company;
   const expiresAt = exportRecord.expiresAt;
   const daysRemaining = expiresAt
-    ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+    ? Math.max(0, Math.ceil((expiresAt.getTime() - currentTimestamp) / (24 * 60 * 60 * 1000)))
     : null;
 
   return (

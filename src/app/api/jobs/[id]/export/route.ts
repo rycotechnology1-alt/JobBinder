@@ -32,6 +32,7 @@ export async function POST(
       categories: body.categories || ["photos", "notes", "punch_list", "progress_updates", "daily_reports", "material_tickets", "other"],
       includeSummaryPdf: body.includeSummaryPdf !== false,
       includeItemIndexCsv: body.includeItemIndexCsv !== false,
+      includeTextWorkbook: body.includeTextWorkbook !== false,
       renameFilesForReadability: body.renameFilesForReadability !== false,
       groupByCategory: body.groupByCategory !== false,
     };
@@ -70,7 +71,7 @@ export async function POST(
         );
 
         // 2. Generate ZIP
-        const zipBuffer = await ExportJobPackageService.generateZip(manifest);
+        const zipBuffer = await ExportJobPackageService.generateZip(manifest, options);
 
         // 3. Upload ZIP to R2
         const storageKey = `${user.companyId}/exports/${exportRecord.id}.zip`;

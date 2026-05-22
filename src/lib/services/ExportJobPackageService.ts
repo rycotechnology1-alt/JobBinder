@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import prisma from "@/lib/prisma";
@@ -13,9 +14,12 @@ export type ExportOptions = {
   categories: string[]; // ["photos", "notes", "punch_list", "progress_updates", "daily_reports", "material_tickets", "other"]
   includeSummaryPdf: boolean;
   includeItemIndexCsv: boolean;
+  includeTextWorkbook: boolean;
   renameFilesForReadability: boolean;
   groupByCategory: boolean;
 };
+
+type ExportZipOptions = Partial<Pick<ExportOptions, "includeSummaryPdf" | "includeItemIndexCsv" | "includeTextWorkbook">>;
 
 export type ExportManifest = {
   jobBucket: {
@@ -45,10 +49,17 @@ export type ExportItem = {
   id: string;
   category: string; // e.g. "Photos", "Punch List", "Progress Updates", "Daily Reports", "Material Tickets", "Notes", "Other"
   itemType: "FILE" | "NOTE" | "TASK";
+  textItemType?: "GENERAL" | "PROGRESS" | "TASK" | "PUNCH_LIST";
   createdAt: string;
   createdBy: string;
   title?: string;
   description?: string;
+  noteCategory?: string;
+  statusTag?: string;
+  taskStatus?: "OPEN" | "IN_PROGRESS" | "DONE";
+  priority?: number | null;
+  dueDate?: string;
+  assignedTo?: string;
   originalFileName?: string;
   exportedFileName: string; // resolved and unique
   folderPath: string; // e.g. "01 - Photos"
@@ -77,7 +88,10 @@ export class ExportJobPackageService {
           include: { author: { select: { name: true, email: true } } },
         },
         tasks: {
-          include: { createdBy: { select: { name: true, email: true } } },
+          include: {
+            assignedTo: { select: { name: true, email: true } },
+            createdBy: { select: { name: true, email: true } },
+          },
         },
       },
     });
@@ -229,10 +243,13 @@ export class ExportJobPackageService {
           id: note.id,
           category,
           itemType: "NOTE",
+          textItemType: note.type,
           createdAt: note.createdAt.toISOString(),
           createdBy: getUserDisplayName(note.author),
           title: note.statusTag || note.category || "Note",
           description: note.content,
+          noteCategory: note.category || undefined,
+          statusTag: note.statusTag || undefined,
           exportedFileName: "", // Resolved in naming step
           folderPath: options.groupByCategory ? folderPath : "",
         });
@@ -262,10 +279,15 @@ export class ExportJobPackageService {
           id: task.id,
           category,
           itemType: "TASK",
+          textItemType: task.type,
           createdAt: task.createdAt.toISOString(),
           createdBy: getUserDisplayName(task.createdBy),
           title: task.title,
           description: task.description || undefined,
+          taskStatus: task.status,
+          priority: task.priority,
+          dueDate: task.dueDate?.toISOString(),
+          assignedTo: task.assignedTo ? getUserDisplayName(task.assignedTo) : undefined,
           exportedFileName: "", // Resolved in naming step
           folderPath: options.groupByCategory ? folderPath : "",
         });
@@ -353,7 +375,7 @@ export class ExportJobPackageService {
 
       // Handle file extension protection
       const finalExt = nameCandidate.endsWith(ext) ? "" : ext;
-      let finalName = nameCandidate + finalExt;
+      const finalName = nameCandidate + finalExt;
 
       // Duplicate resolution
       const folderKey = item.folderPath || "root";
@@ -909,19 +931,230 @@ export class ExportJobPackageService {
     return Buffer.from(bytes);
   }
 
+  private static getTextItems(manifest: ExportManifest) {
+    return manifest.items.filter((item) => item.itemType !== "FILE");
+  }
+
+  private static getWorkbookSection(item: ExportItem) {
+    if (item.itemType === "NOTE" && item.textItemType === "PROGRESS") return "Progress Updates";
+    if (item.itemType === "NOTE") return "Field Notes";
+    if (item.itemType === "TASK" && item.textItemType === "PUNCH_LIST") return "Punch List";
+    return "Tasks";
+  }
+
+  private static getWorkbookItemType(item: ExportItem) {
+    if (item.itemType === "NOTE" && item.textItemType === "PROGRESS") return "Progress";
+    if (item.itemType === "NOTE") return "Note";
+    if (item.itemType === "TASK" && item.textItemType === "PUNCH_LIST") return "Punch List";
+    return "Task";
+  }
+
+  private static formatWorkbookStatus(status?: string) {
+    if (!status) return "";
+    return status
+      .toLowerCase()
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  private static formatWorkbookTextDate(date: string) {
+    if (date.includes("T")) return date.replace("T", " ").slice(0, 16);
+    return format(new Date(date), "yyyy-MM-dd HH:mm");
+  }
+
+  private static formatWorkbookDate(date?: string) {
+    if (!date) return "";
+    if (date.includes("T")) return date.slice(0, 10);
+    return format(new Date(date), "yyyy-MM-dd");
+  }
+
+  private static getWorkbookCategory(item: ExportItem) {
+    if (item.itemType === "NOTE") return item.statusTag || item.noteCategory || item.category;
+    return item.category;
+  }
+
+  private static addTextItemsSheet(workbook: ExcelJS.Workbook, name: string, items: ExportItem[]) {
+    const worksheet = workbook.addWorksheet(name);
+
+    worksheet.columns = [
+      { header: "Item ID", key: "id", width: 24 },
+      { header: "Section", key: "section", width: 20 },
+      { header: "Item Type", key: "itemType", width: 16 },
+      { header: "Created Date", key: "createdAt", width: 18 },
+      { header: "Created By", key: "createdBy", width: 22 },
+      { header: "Title/Tag", key: "title", width: 28 },
+      { header: "Status", key: "status", width: 16 },
+      { header: "Priority", key: "priority", width: 10 },
+      { header: "Due Date", key: "dueDate", width: 14 },
+      { header: "Assigned To", key: "assignedTo", width: 22 },
+      { header: "Category", key: "category", width: 22 },
+      { header: "Body/Description", key: "body", width: 60 },
+      { header: "Linked Folder Path", key: "folderPath", width: 24 },
+    ];
+
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+    worksheet.autoFilter = "A1:M1";
+
+    for (const item of items) {
+      worksheet.addRow({
+        id: item.id,
+        section: this.getWorkbookSection(item),
+        itemType: this.getWorkbookItemType(item),
+        createdAt: this.formatWorkbookTextDate(item.createdAt),
+        createdBy: item.createdBy,
+        title: item.title || "",
+        status: this.formatWorkbookStatus(item.taskStatus),
+        priority: item.priority ?? "",
+        dueDate: this.formatWorkbookDate(item.dueDate),
+        assignedTo: item.assignedTo || "",
+        category: this.getWorkbookCategory(item),
+        body: item.description || "",
+        folderPath: item.folderPath,
+      });
+    }
+
+    const header = worksheet.getRow(1);
+    header.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    header.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1F2937" },
+    };
+    header.alignment = { vertical: "middle", wrapText: true };
+
+    worksheet.eachRow((row, rowNumber) => {
+      row.height = rowNumber === 1 ? 22 : 48;
+      row.eachCell((cell) => {
+        cell.alignment = { vertical: "top", wrapText: true };
+        cell.border = {
+          bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+        };
+      });
+
+      if (rowNumber > 1 && rowNumber % 2 === 0) {
+        row.eachCell((cell) => {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF9FAFB" },
+          };
+        });
+      }
+    });
+
+    for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
+      const statusCell = worksheet.getCell(rowNumber, 7);
+      const status = String(statusCell.value || "");
+      if (status === "Open") {
+        statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF7ED" } };
+      } else if (status === "In Progress") {
+        statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
+      } else if (status === "Done") {
+        statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
+      }
+    }
+
+    return worksheet;
+  }
+
+  /**
+   * Generates the structured workbook used by PMs to review and manipulate text items.
+   */
+  static async generateTextItemsWorkbook(manifest: ExportManifest): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "JobBinder";
+    workbook.created = new Date(manifest.export.generatedAt);
+
+    const summary = workbook.addWorksheet("Job Summary");
+    summary.columns = [
+      { width: 24 },
+      { width: 44 },
+      { width: 18 },
+    ];
+    summary.addRow(["Job Text Items Export"]);
+    summary.addRow([]);
+    summary.addRow(["Job Name", manifest.jobBucket.name]);
+    summary.addRow(["Job Number", manifest.jobBucket.jobNumber || ""]);
+    summary.addRow(["PO Number", manifest.jobBucket.poNumber || ""]);
+    summary.addRow(["Customer", manifest.jobBucket.customerName || ""]);
+    summary.addRow(["Job Status", manifest.jobBucket.status]);
+    summary.addRow(["Exported By", manifest.export.generatedBy]);
+    summary.addRow(["Generated At", this.formatWorkbookTextDate(manifest.export.generatedAt)]);
+    summary.addRow([]);
+    summary.addRow(["Category", "Count"]);
+
+    const textItems = this.getTextItems(manifest);
+    const counts = textItems.reduce<Record<string, number>>((acc, item) => {
+      const section = this.getWorkbookSection(item);
+      acc[section] = (acc[section] || 0) + 1;
+      return acc;
+    }, {});
+
+    for (const section of ["Progress Updates", "Field Notes", "Tasks", "Punch List"]) {
+      summary.addRow([section, counts[section] || 0]);
+    }
+
+    summary.getRow(1).font = { bold: true, size: 16, color: { argb: "FF111827" } };
+    summary.getRow(11).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    summary.getRow(11).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1F2937" },
+    };
+
+    this.addTextItemsSheet(workbook, "All Text Items", textItems);
+    this.addTextItemsSheet(
+      workbook,
+      "Progress Updates",
+      textItems.filter((item) => this.getWorkbookSection(item) === "Progress Updates"),
+    );
+    this.addTextItemsSheet(
+      workbook,
+      "Field Notes",
+      textItems.filter((item) => this.getWorkbookSection(item) === "Field Notes"),
+    );
+    this.addTextItemsSheet(
+      workbook,
+      "Tasks",
+      textItems.filter((item) => this.getWorkbookSection(item) === "Tasks"),
+    );
+    this.addTextItemsSheet(
+      workbook,
+      "Punch List",
+      textItems.filter((item) => this.getWorkbookSection(item) === "Punch List"),
+    );
+
+    const bytes = await workbook.xlsx.writeBuffer();
+    return Buffer.from(bytes);
+  }
+
   /**
    * Compiles the manifest items into a .zip archive, downloading files from R2.
    */
-  static async generateZip(manifest: ExportManifest): Promise<Buffer> {
+  static async generateZip(manifest: ExportManifest, options: ExportZipOptions = {}): Promise<Buffer> {
+    const outputOptions = {
+      includeSummaryPdf: options.includeSummaryPdf !== false,
+      includeItemIndexCsv: options.includeItemIndexCsv !== false,
+      includeTextWorkbook: options.includeTextWorkbook !== false,
+    };
     const zip = new JSZip();
 
-    // 1. ADD CSV INDEX & PDF SUMMARY
-    if (manifest.items.length > 0) {
+    // 1. ADD STRUCTURED SUMMARY ARTIFACTS
+    if (manifest.items.length > 0 && outputOptions.includeItemIndexCsv) {
       const csvContent = this.generateItemIndexCsv(manifest);
       zip.file("00 - Item Index.csv", csvContent);
+    }
 
+    if (manifest.items.length > 0 && outputOptions.includeSummaryPdf) {
       const pdfBuffer = await this.generateSummaryPdf(manifest);
       zip.file("00 - Job Summary.pdf", pdfBuffer);
+    }
+
+    const textItems = this.getTextItems(manifest);
+    if (textItems.length > 0 && outputOptions.includeTextWorkbook) {
+      const workbookBuffer = await this.generateTextItemsWorkbook(manifest);
+      zip.file("00 - Job Text Items.xlsx", workbookBuffer);
     }
 
     // 2. DOWNLOAD AND INSERT R2 FILES IN PARALLEL WITH GRACEFUL ERROR HANDLING
@@ -945,24 +1178,7 @@ export class ExportJobPackageService {
 
     await Promise.all(downloadPromises);
 
-    // 3. COMPILE TEXT NOTES & TASKS
-    const textItems = manifest.items.filter((item) => item.itemType !== "FILE");
-    for (const item of textItems) {
-      const zipPath = item.folderPath
-        ? `${item.folderPath}/${item.exportedFileName}`
-        : item.exportedFileName;
-
-      let fileContent = `ID: ${item.id}\n`;
-      fileContent += `Category: ${item.category}\n`;
-      fileContent += `Date: ${format(new Date(item.createdAt), "yyyy-MM-dd HH:mm:ss")}\n`;
-      fileContent += `Author: ${item.createdBy}\n`;
-      fileContent += `Title/Tag: ${item.title}\n\n`;
-      fileContent += `Content:\n${item.description || "No content provided."}\n`;
-
-      zip.file(zipPath, fileContent);
-    }
-
-    // 4. WRITE WARNINGS FILE IF ANY OCCURRED
+    // 3. WRITE WARNINGS FILE IF ANY OCCURRED
     if (manifest.warnings.length > 0) {
       let warningsContent = "Export Job Package - Compilation Warnings\n";
       warningsContent += "=========================================\n\n";
@@ -971,7 +1187,7 @@ export class ExportJobPackageService {
       zip.file("Export Warnings.txt", warningsContent);
     }
 
-    // 5. GENERATE FINAL ZIP BUFFER
+    // 4. GENERATE FINAL ZIP BUFFER
     const zipBuffer = await zip.generateAsync({
       type: "nodebuffer",
       compression: "DEFLATE",

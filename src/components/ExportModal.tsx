@@ -8,10 +8,7 @@ import {
   Download,
   Loader2,
   FileCheck,
-  Calendar,
   AlertCircle,
-  FolderTree,
-  FileSpreadsheet,
   RefreshCw,
   Link2,
   Copy,
@@ -104,12 +101,22 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
 
   // Reset when modal opens or closes
   useEffect(() => {
+    let isCancelled = false;
+
     if (isOpen) {
-      setExportState("IDLE");
-      setActiveExport(null);
-      setSubmitError(null);
-      setLinkCopied(false);
+      queueMicrotask(() => {
+        if (isCancelled) return;
+
+        setExportState("IDLE");
+        setActiveExport(null);
+        setSubmitError(null);
+        setLinkCopied(false);
+      });
     }
+
+    return () => {
+      isCancelled = true;
+    };
   }, [isOpen]);
 
   const toggleCategory = (key: keyof typeof categories) => {
@@ -122,7 +129,7 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
 
     // Validate that at least one category is selected
     const selectedCats = Object.entries(categories)
-      .filter(([_, checked]) => checked)
+      .filter((entry) => entry[1])
       .map(([key]) => key);
 
     if (selectedCats.length === 0) {
@@ -150,6 +157,7 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
       categories: selectedCats,
       includeSummaryPdf,
       includeItemIndexCsv,
+      includeTextWorkbook: true,
       renameFilesForReadability,
       groupByCategory,
     };
