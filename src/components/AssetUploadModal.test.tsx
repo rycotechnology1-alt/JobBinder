@@ -64,4 +64,41 @@ describe("AssetUploadModal", () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it("surfaces a TypeError thrown by the R2 upload instead of silently queueing while online", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/files/upload-url")) {
+        return new Response(
+          JSON.stringify({ uploadUrl: "https://r2.example.com/upload", objectKey: "key-1", fileId: "id-1" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      // Simulate CORS rejection on the cross-origin R2 PUT.
+      throw new TypeError("Load failed");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AssetUploadModal isOpen onClose={onClose} jobId="job-1" title="Upload" />);
+
+    const file = new File(["pdf"], "permit.pdf", { type: "application/pdf" });
+    const fileInput = screen.getByLabelText("Photo or document") as HTMLInputElement;
+    Object.defineProperty(fileInput, "files", {
+      value: [file],
+      configurable: true,
+    });
+    fireEvent.change(fileInput);
+    await user.selectOptions(screen.getByLabelText("Category"), "Permits");
+    fireEvent.submit(fileInput.closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/load failed/i)).toBeTruthy();
+    });
+    expect(offlineQueueMocks.queueOfflineFile).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

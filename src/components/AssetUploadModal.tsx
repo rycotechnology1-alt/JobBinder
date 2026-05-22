@@ -3,7 +3,7 @@
 import imageCompression from "browser-image-compression";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UploadCloud } from "lucide-react";
+import { Camera, UploadCloud } from "lucide-react";
 import { DEFAULT_ASSET_CATEGORY, getMimeTypeForFilename } from "@/lib/asset-categories";
 import { queueOfflineFile } from "@/lib/offline-sync/queue";
 import { Button } from "@/components/ui/Button";
@@ -31,8 +31,12 @@ function isOffline() {
   return typeof navigator !== "undefined" && !navigator.onLine;
 }
 
-function isNetworkUploadError(error: unknown) {
-  return isOffline() || error instanceof TypeError;
+function isNetworkUploadError(_error: unknown) {
+  // Only fall back to the offline queue when the browser reports it is
+  // actually offline. A `TypeError` from `fetch` can also mean CORS, TLS, or
+  // a misconfigured server — those should surface to the user rather than
+  // be silently queued for retry (which would just fail the same way).
+  return isOffline();
 }
 
 export function AssetUploadModal({
@@ -43,6 +47,7 @@ export function AssetUploadModal({
 }: Props) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -192,10 +197,29 @@ export function AssetUploadModal({
             name="file"
             type="file"
             accept={ACCEPTED_UPLOAD_TYPES}
-            required
             onChange={(event) => setSelectedUploadFile(event.currentTarget.files?.[0] ?? null)}
             className="block w-full text-sm text-zinc-300 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-100 hover:file:bg-zinc-700"
           />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(event) => setSelectedUploadFile(event.currentTarget.files?.[0] ?? null)}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => cameraInputRef.current?.click()}
+            className="md:hidden mt-3 w-full gap-2"
+          >
+            <Camera size={18} />
+            Take Photo
+          </Button>
+          {selectedUploadFile && (
+            <p className="mt-2 text-xs text-brand-light">Selected: {selectedUploadFile.name}</p>
+          )}
           <p className="mt-2 text-xs text-zinc-500">Images are compressed before upload. PDFs and office documents upload unchanged.</p>
         </div>
 
