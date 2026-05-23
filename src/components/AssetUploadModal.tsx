@@ -3,13 +3,16 @@
 import imageCompression from "browser-image-compression";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, UploadCloud } from "lucide-react";
+import { Camera, FileScan, UploadCloud } from "lucide-react";
 import { DEFAULT_ASSET_CATEGORY, getMimeTypeForFilename } from "@/lib/asset-categories";
 import { queueOfflineFile } from "@/lib/offline-sync/queue";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { AssetCategorySelect } from "@/components/AssetCategorySelect";
+import { ScanicScannerHost } from "@/features/uploads/scanner-scanic/ScanicScannerHost";
+import { scanicScannerProvider } from "@/features/uploads/scanner-scanic/scanicProvider";
+import type { ScanicDetectionMode } from "@/features/uploads/scanner-scanic/scanicTypes";
 
 type Props = {
   isOpen: boolean;
@@ -31,13 +34,21 @@ function isOffline() {
   return typeof navigator !== "undefined" && !navigator.onLine;
 }
 
-function isNetworkUploadError(_error: unknown) {
+function isNetworkUploadError() {
   // Only fall back to the offline queue when the browser reports it is
   // actually offline. A `TypeError` from `fetch` can also mean CORS, TLS, or
   // a misconfigured server — those should surface to the user rather than
   // be silently queued for retry (which would just fail the same way).
   return isOffline();
 }
+
+type ScanUploadMetadata = {
+  sourceType: "scan";
+  scannedPageCount: number;
+  createdFromMobileCamera: true;
+  scannerProvider: "scanic";
+  detectionMode?: ScanicDetectionMode;
+};
 
 export function AssetUploadModal({
   isOpen,
@@ -52,6 +63,35 @@ export function AssetUploadModal({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [scanUploadMetadata, setScanUploadMetadata] = useState<ScanUploadMetadata | null>(null);
+
+  function selectUploadFile(file: File | null) {
+    setSelectedUploadFile(file);
+    setScanUploadMetadata(null);
+  }
+
+  async function handleScanDocument() {
+    setError(null);
+    setStatus(null);
+
+    try {
+      const result = await scanicScannerProvider.openScanner({
+        maxPages: 20,
+        defaultFileName: "Scanned Document",
+      });
+      setSelectedUploadFile(result.file);
+      setScanUploadMetadata({
+        sourceType: "scan",
+        scannedPageCount: result.pageCount,
+        createdFromMobileCamera: true,
+        scannerProvider: "scanic",
+        detectionMode: result.metadata?.detectionMode,
+      });
+    } catch (scanError) {
+      if (scanError instanceof Error && scanError.message === "Scanner canceled.") return;
+      setError(scanError instanceof Error ? scanError.message : "Scanner is unavailable. Upload a file instead.");
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -105,6 +145,7 @@ export function AssetUploadModal({
         await queueUpload();
         formRef.current?.reset();
         setSelectedUploadFile(null);
+        setScanUploadMetadata(null);
         onClose();
         return;
       }
@@ -146,6 +187,7 @@ export function AssetUploadModal({
           name: formData.get("name"),
           contentType: uploadContentType,
           category,
+          ...(scanUploadMetadata ?? {}),
         }),
       });
 
@@ -156,10 +198,11 @@ export function AssetUploadModal({
 
       formRef.current?.reset();
       setSelectedUploadFile(null);
+      setScanUploadMetadata(null);
       onClose();
       router.refresh();
     } catch (uploadError) {
-      if (isNetworkUploadError(uploadError)) {
+      if (isNetworkUploadError()) {
         try {
           const fallbackContentType = preparedContentType || sourceFile.type || getMimeTypeForFilename(sourceFile.name);
           if (!fallbackContentType) throw new Error("Unsupported file type.");
@@ -173,6 +216,7 @@ export function AssetUploadModal({
           });
           formRef.current?.reset();
           setSelectedUploadFile(null);
+          setScanUploadMetadata(null);
           onClose();
         } catch (queueError) {
           setError(queueError instanceof Error ? queueError.message : "Upload failed.");
@@ -188,6 +232,7 @@ export function AssetUploadModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
+      <ScanicScannerHost />
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-xl border border-dashed border-zinc-700 bg-black/20 p-5">
           <UploadCloud size={28} className="mb-3 text-brand-light" />
@@ -197,7 +242,7 @@ export function AssetUploadModal({
             name="file"
             type="file"
             accept={ACCEPTED_UPLOAD_TYPES}
-            onChange={(event) => setSelectedUploadFile(event.currentTarget.files?.[0] ?? null)}
+            onChange={(event) => selectUploadFile(event.currentTarget.files?.[0] ?? null)}
             className="block w-full text-sm text-zinc-300 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-100 hover:file:bg-zinc-700"
           />
           <input
@@ -206,7 +251,7 @@ export function AssetUploadModal({
             accept="image/*"
             capture="environment"
             className="hidden"
-            onChange={(event) => setSelectedUploadFile(event.currentTarget.files?.[0] ?? null)}
+            onChange={(event) => selectUploadFile(event.currentTarget.files?.[0] ?? null)}
           />
           <Button
             type="button"
@@ -217,8 +262,19 @@ export function AssetUploadModal({
             <Camera size={18} />
             Take Photo
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleScanDocument}
+            className="md:hidden mt-3 w-full gap-2"
+          >
+            <FileScan size={18} />
+            Scan Document
+          </Button>
           {selectedUploadFile && (
-            <p className="mt-2 text-xs text-brand-light">Selected: {selectedUploadFile.name}</p>
+            <p className="mt-2 text-xs text-brand-light">
+              {scanUploadMetadata ? "Scanned" : "Selected"}: {selectedUploadFile.name}
+            </p>
           )}
           <p className="mt-2 text-xs text-zinc-500">Images are compressed before upload. PDFs and office documents upload unchanged.</p>
         </div>

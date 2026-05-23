@@ -90,7 +90,11 @@ async function loadWorkbookFromZip(zipBuffer: Buffer) {
 
   const workbookBuffer = await workbookFile!.async("nodebuffer");
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(workbookBuffer);
+  const workbookArrayBuffer = workbookBuffer.buffer.slice(
+    workbookBuffer.byteOffset,
+    workbookBuffer.byteOffset + workbookBuffer.byteLength,
+  ) as Parameters<typeof workbook.xlsx.load>[0];
+  await workbook.xlsx.load(workbookArrayBuffer);
 
   return { zip, workbook };
 }

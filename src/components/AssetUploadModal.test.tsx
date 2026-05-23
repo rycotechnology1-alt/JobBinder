@@ -9,6 +9,9 @@ const refresh = vi.fn();
 const offlineQueueMocks = vi.hoisted(() => ({
   queueOfflineFile: vi.fn(),
 }));
+const scanicProviderMocks = vi.hoisted(() => ({
+  openScanner: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -20,11 +23,21 @@ vi.mock("@/lib/offline-sync/queue", () => ({
   queueOfflineFile: offlineQueueMocks.queueOfflineFile,
 }));
 
+vi.mock("@/features/uploads/scanner-scanic/scanicProvider", () => ({
+  registerScanicScannerLauncher: vi.fn(() => vi.fn()),
+  scanicScannerProvider: scanicProviderMocks,
+}));
+
+vi.mock("@/features/uploads/scanner-scanic/ScanicScannerHost", () => ({
+  ScanicScannerHost: () => null,
+}));
+
 describe("AssetUploadModal", () => {
   beforeEach(() => {
     refresh.mockClear();
     offlineQueueMocks.queueOfflineFile.mockReset();
     offlineQueueMocks.queueOfflineFile.mockResolvedValue({ id: "queued-file" });
+    scanicProviderMocks.openScanner.mockReset();
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -100,5 +113,71 @@ describe("AssetUploadModal", () => {
     });
     expect(offlineQueueMocks.queueOfflineFile).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("uploads the PDF returned by the Scanic scanner provider with scan metadata", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+
+    const scannedFile = new File(["pdf"], "scan.pdf", { type: "application/pdf" });
+    scanicProviderMocks.openScanner.mockResolvedValue({
+      file: scannedFile,
+      pageCount: 2,
+      source: "scan",
+      metadata: {
+        scannerProvider: "scanic",
+        detectionMode: "live",
+      },
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/files/upload-url")) {
+        return new Response(
+          JSON.stringify({ uploadUrl: "https://r2.example.com/upload", objectKey: "company/file.pdf" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("https://r2.example.com/upload")) {
+        expect(init?.body).toBe(scannedFile);
+        return new Response(null, { status: 200 });
+      }
+      if (url.includes("/api/files")) {
+        return new Response(JSON.stringify({ id: "file-1" }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AssetUploadModal isOpen onClose={onClose} jobId="job-1" title="Upload" />);
+
+    await user.click(screen.getByRole("button", { name: /scan document/i }));
+    await user.selectOptions(screen.getByLabelText("Category"), "Permits");
+    await user.click(screen.getByRole("button", { name: "Upload" }));
+
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    expect(scanicProviderMocks.openScanner).toHaveBeenCalledWith({
+      maxPages: 20,
+      defaultFileName: "Scanned Document",
+    });
+    const fileRecordCall = fetchMock.mock.calls.find(([input]) => input.toString() === "/api/files");
+    expect(JSON.parse(fileRecordCall?.[1]?.body as string)).toMatchObject({
+      jobId: "job-1",
+      originalName: "scan.pdf",
+      contentType: "application/pdf",
+      category: "Permits",
+      sourceType: "scan",
+      scannedPageCount: 2,
+      createdFromMobileCamera: true,
+      scannerProvider: "scanic",
+      detectionMode: "live",
+    });
   });
 });
