@@ -1,6 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  getStableDetection,
+  isDetectionUsable,
+  outsetCorners,
+  type StableDetectionEntry,
+} from "./scanicGeometry";
 import { ScanicOverlay } from "./ScanicOverlay";
 import { getScanicCameraSupportError } from "./scanicCameraSupport";
 import { createJpegBlobFromCanvas } from "./scanicPdfGeneration";
@@ -41,15 +47,19 @@ export function ScanicCameraView({ onCapture, onError, captureRequestId, isActiv
   const scanicRef = useRef<ScanicModule | null>(null);
   const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const latestCornersRef = useRef<ScanicCorners | null>(null);
+  const latestConfidenceRef = useRef<number | null>(null);
+  const stableHistoryRef = useRef<StableDetectionEntry[]>([]);
   const isDetectingRef = useRef(false);
   const [overlayCorners, setOverlayCorners] = useState<ScanicCorners | null>(null);
-  const [detectionSize, setDetectionSize] = useState({ width: 1, height: 1 });
+  const [sourceSize, setSourceSize] = useState({ width: 1, height: 1 });
   const [status, setStatus] = useState("Opening camera...");
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     latestCornersRef.current = null;
+    latestConfidenceRef.current = null;
+    stableHistoryRef.current = [];
     setOverlayCorners(null);
   }, []);
 
@@ -118,23 +128,46 @@ export function ScanicCameraView({ onCapture, onError, captureRequestId, isActiv
             canvas.width = width;
             canvas.height = height;
             getCanvasContext(canvas).drawImage(video, 0, 0, width, height);
-            setDetectionSize({ width, height });
+            setSourceSize({ width: video.videoWidth, height: video.videoHeight });
 
             const result = await scannerRef.current.scan(canvas, {
               mode: "detect",
               maxProcessingDimension: DETECTION_MAX_DIMENSION,
-              enableDetectionCascade: false,
-              minDocumentCoverageRatio: 0.08,
+              enableDetectionCascade: true,
+              minDocumentCoverageRatio: 0.06,
+              maxCandidateContours: 18,
+              dilationKernelSize: 5,
+              dilationIterations: 2,
             });
 
-            if (result.success && result.corners) {
-              latestCornersRef.current = result.corners;
-              setOverlayCorners(result.corners);
-              setStatus("Document detected");
+            const sourceCorners = result.corners
+              ? scaleCorners(result.corners, video.videoWidth / width, video.videoHeight / height)
+              : null;
+            const confidence = result.confidence ?? (result.success ? 0.5 : null);
+
+            if (sourceCorners && result.success && isDetectionUsable({
+              corners: sourceCorners,
+              dimensions: { width: video.videoWidth, height: video.videoHeight },
+              confidence,
+            })) {
+              const stableDetection = getStableDetection(
+                stableHistoryRef.current,
+                sourceCorners,
+                { width: video.videoWidth, height: video.videoHeight },
+              );
+              stableHistoryRef.current = stableDetection.history;
+
+              if (stableDetection.stableCorners) {
+                latestCornersRef.current = stableDetection.stableCorners;
+                latestConfidenceRef.current = confidence;
+                setOverlayCorners(stableDetection.stableCorners);
+                setStatus("Edges locked. Review corners after capture.");
+              } else {
+                setStatus("Hold steady...");
+              }
             } else {
-              latestCornersRef.current = null;
-              setOverlayCorners(null);
-              setStatus("Align the document inside the guide");
+              stableHistoryRef.current = stableHistoryRef.current.slice(-2);
+              setStatus(latestCornersRef.current ? "Keeping last stable edge preview" : "Align the full page inside the guide");
             }
           } catch (error) {
             console.warn("Scanic live detection failed:", error);
@@ -182,46 +215,68 @@ export function ScanicCameraView({ onCapture, onError, captureRequestId, isActiv
         scanicRef.current = scanic;
         const detectionCanvas = detectionCanvasRef.current;
         const liveCorners = latestCornersRef.current;
-        let outputCanvas: HTMLCanvasElement = sourceCanvas;
+        let reviewCorners: ScanicCorners | null = null;
+        let confidence: number | null = null;
         let detectionMode: ScanicCapture["detectionMode"] = "fallback";
 
-        if (liveCorners && detectionCanvas) {
-          const fullSizeCorners = scaleCorners(
-            liveCorners,
-            sourceCanvas.width / detectionCanvas.width,
-            sourceCanvas.height / detectionCanvas.height,
+        const scanner = scannerRef.current ?? new scanic.Scanner({ mode: "detect" });
+        scannerRef.current = scanner;
+        const extracted = await scanner.scan(sourceCanvas, {
+          mode: "detect",
+          maxProcessingDimension: 1400,
+          enableDetectionCascade: true,
+          minDocumentCoverageRatio: 0.06,
+          maxCandidateContours: 18,
+          dilationKernelSize: 5,
+          dilationIterations: 2,
+        });
+
+        const captureConfidence = extracted.confidence ?? (extracted.success ? 0.5 : null);
+        if (extracted.success && isDetectionUsable({
+          corners: extracted.corners,
+          dimensions: { width: sourceCanvas.width, height: sourceCanvas.height },
+          confidence: captureConfidence,
+        })) {
+          reviewCorners = extracted.corners;
+          confidence = captureConfidence;
+          detectionMode = "capture";
+        } else if (liveCorners && isDetectionUsable({
+          corners: liveCorners,
+          dimensions: { width: sourceCanvas.width, height: sourceCanvas.height },
+          confidence: latestConfidenceRef.current ?? 0.5,
+        })) {
+          reviewCorners = liveCorners;
+          confidence = latestConfidenceRef.current;
+          detectionMode = "live";
+        } else {
+          detectionMode = "fallback";
+        }
+
+        const sourceImage = await createJpegBlobFromCanvas(sourceCanvas);
+        if (reviewCorners) {
+          reviewCorners = scaleCorners(
+            reviewCorners,
+            sourceImage.width / sourceCanvas.width,
+            sourceImage.height / sourceCanvas.height,
           );
-          const extracted = await scanic.extractDocument(sourceCanvas, fullSizeCorners, { output: "canvas" });
-          if (extracted.success && extracted.output instanceof HTMLCanvasElement) {
-            outputCanvas = extracted.output;
-            detectionMode = "live";
-          }
+          reviewCorners = outsetCorners(reviewCorners, { width: sourceImage.width, height: sourceImage.height });
         }
 
-        if (detectionMode === "fallback") {
-          const scanner = scannerRef.current ?? new scanic.Scanner({ mode: "extract" });
-          scannerRef.current = scanner;
-          const extracted = await scanner.scan(sourceCanvas, {
-            mode: "extract",
-            output: "canvas",
-            maxProcessingDimension: 1200,
-          });
-
-          if (extracted.success && extracted.output instanceof HTMLCanvasElement) {
-            outputCanvas = extracted.output;
-            detectionMode = "capture";
-          }
-        }
-
-        const pageImage = await createJpegBlobFromCanvas(outputCanvas);
         if (!cancelled) {
           onCapture({
-            blob: pageImage.blob,
-            width: pageImage.width,
-            height: pageImage.height,
+            blob: sourceImage.blob,
+            width: sourceImage.width,
+            height: sourceImage.height,
             detectionMode,
+            corners: reviewCorners,
+            confidence,
+            sourceWidth: sourceCanvas.width,
+            sourceHeight: sourceCanvas.height,
+            detectionFrame: detectionCanvas ? { width: detectionCanvas.width, height: detectionCanvas.height } : null,
+            displayFrame: { width: video.videoWidth, height: video.videoHeight },
+            needsCornerReview: true,
           });
-          setStatus("Page captured");
+          setStatus("Review and adjust corners");
         }
       } catch (error) {
         console.warn("Scanic capture failed, using full image fallback:", error);
@@ -239,6 +294,8 @@ export function ScanicCameraView({ onCapture, onError, captureRequestId, isActiv
               width: pageImage.width,
               height: pageImage.height,
               detectionMode: "fallback",
+              corners: null,
+              needsCornerReview: true,
             });
           }
         } catch {
@@ -260,9 +317,9 @@ export function ScanicCameraView({ onCapture, onError, captureRequestId, isActiv
         ref={videoRef}
         playsInline
         muted
-        className="h-full min-h-[420px] w-full object-cover"
+        className="h-full min-h-[420px] w-full object-contain"
       />
-      <ScanicOverlay corners={overlayCorners} width={detectionSize.width} height={detectionSize.height} />
+      <ScanicOverlay corners={overlayCorners} width={sourceSize.width} height={sourceSize.height} />
       <div className="absolute left-3 right-3 top-3 rounded-lg bg-black/60 px-3 py-2 text-center text-xs font-medium text-zinc-100 backdrop-blur">
         {status}
       </div>

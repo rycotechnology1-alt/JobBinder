@@ -24,7 +24,7 @@ export function ScanicOverlay({ corners, width, height }: Props) {
     <svg
       className="pointer-events-none absolute inset-0 h-full w-full"
       viewBox={`0 0 ${width || 1} ${height || 1}`}
-      preserveAspectRatio="none"
+      preserveAspectRatio="xMidYMid meet"
       aria-hidden="true"
     >
       {corners ? (
@@ -66,4 +66,3 @@ export function ScanicOverlay({ corners, width, height }: Props) {
     </svg>
   );
 }
-

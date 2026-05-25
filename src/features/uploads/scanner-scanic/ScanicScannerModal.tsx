@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { FileText, X } from "lucide-react";
 import { ScanicCameraView } from "./ScanicCameraView";
 import { ScanicCaptureControls } from "./ScanicCaptureControls";
+import { ScanicCornerReview } from "./ScanicCornerReview";
 import { ScanicPagePreview } from "./ScanicPagePreview";
 import { ScanicPageStrip } from "./ScanicPageStrip";
 import { createPdfFileFromScannedPages } from "./scanicPdfGeneration";
@@ -27,6 +28,8 @@ function createPage(capture: ScanicCapture): ScanicPage {
     width: capture.width,
     height: capture.height,
     detectionMode: capture.detectionMode,
+    corners: capture.corners,
+    confidence: capture.confidence,
   };
 }
 
@@ -50,6 +53,8 @@ export function ScanicScannerModal({
   const [error, setError] = useState<string | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isCameraUnavailable, setIsCameraUnavailable] = useState(false);
+  const [pendingCapture, setPendingCapture] = useState<ScanicCapture | null>(null);
+  const [pendingCaptureUrl, setPendingCaptureUrl] = useState<string | null>(null);
   const pagesRef = useRef<ScanicPage[]>([]);
 
   const selectedPage = useMemo(
@@ -74,16 +79,44 @@ export function ScanicScannerModal({
     pagesRef.current.forEach((page) => URL.revokeObjectURL(page.objectUrl));
   }, []);
 
+  useEffect(() => () => {
+    if (pendingCaptureUrl) URL.revokeObjectURL(pendingCaptureUrl);
+  }, [pendingCaptureUrl]);
+
   const handleCapture = useCallback((capture: ScanicCapture) => {
+    setPendingCaptureUrl((currentUrl) => {
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+      return URL.createObjectURL(capture.blob);
+    });
+    setPendingCapture(capture);
+    setIsCameraActive(false);
+    setIsCameraUnavailable(false);
+  }, []);
+
+  const handleAcceptReviewedCapture = useCallback((capture: ScanicCapture) => {
     const page = createPage(capture);
     setPages((currentPages) => {
       const nextPages = [...currentPages, page].slice(0, maxPages);
       return nextPages;
     });
+    setPendingCapture(null);
+    setPendingCaptureUrl((currentUrl) => {
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+      return null;
+    });
     setIsCameraUnavailable(false);
     setSelectedPageId(page.id);
     setIsCameraActive(false);
   }, [maxPages]);
+
+  const handleRetakePendingCapture = useCallback(() => {
+    setPendingCapture(null);
+    setPendingCaptureUrl((currentUrl) => {
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+      return null;
+    });
+    setIsCameraActive(true);
+  }, []);
 
   const handleDeleteSelected = useCallback(() => {
     if (!selectedPage) return;
@@ -103,6 +136,11 @@ export function ScanicScannerModal({
       setPages((currentPages) => currentPages.filter((page) => page.id !== selectedPage.id));
       setSelectedPageId(null);
     }
+    setPendingCapture(null);
+    setPendingCaptureUrl((currentUrl) => {
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+      return null;
+    });
     setIsCameraActive(true);
   }, [selectedPage]);
 
@@ -168,6 +206,15 @@ export function ScanicScannerModal({
             onCapture={handleCapture}
             onError={handleScannerError}
           />
+        ) : pendingCapture && pendingCaptureUrl ? (
+          <ScanicCornerReview
+            key={pendingCaptureUrl}
+            capture={pendingCapture}
+            objectUrl={pendingCaptureUrl}
+            onAccept={handleAcceptReviewedCapture}
+            onRetake={handleRetakePendingCapture}
+            onError={setError}
+          />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
             {selectedPage ? (
@@ -192,21 +239,23 @@ export function ScanicScannerModal({
           </div>
         )}
 
-        <ScanicCaptureControls
-          pageCount={pages.length}
-          maxPages={maxPages}
-          isCameraActive={isCameraActive}
-          isBusy={isFinishing}
-          canFinish={pages.length > 0}
-          canAddPage={!isCameraUnavailable}
-          onCapture={() => setCaptureRequestId((requestId) => requestId + 1)}
-          onAddPage={() => {
-            setError(null);
-            setIsCameraActive(true);
-          }}
-          onFinish={handleFinish}
-          onCancel={onCancel}
-        />
+        {!pendingCapture && (
+          <ScanicCaptureControls
+            pageCount={pages.length}
+            maxPages={maxPages}
+            isCameraActive={isCameraActive}
+            isBusy={isFinishing}
+            canFinish={pages.length > 0}
+            canAddPage={!isCameraUnavailable}
+            onCapture={() => setCaptureRequestId((requestId) => requestId + 1)}
+            onAddPage={() => {
+              setError(null);
+              setIsCameraActive(true);
+            }}
+            onFinish={handleFinish}
+            onCancel={onCancel}
+          />
+        )}
       </div>
     </div>,
     document.body,

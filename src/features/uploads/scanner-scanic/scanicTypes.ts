@@ -2,6 +2,11 @@ import type { CornerPoints, DetectionOptions } from "scanic";
 
 export type ScanicDetectionMode = "live" | "capture" | "fallback";
 
+export type ScanicFrameDimensions = {
+  width: number;
+  height: number;
+};
+
 export type ScannerResult = {
   file: File;
   pageCount: number;
@@ -27,6 +32,8 @@ export type ScanicPage = {
   width: number;
   height: number;
   detectionMode: ScanicDetectionMode;
+  corners?: ScanicCorners | null;
+  confidence?: number | null;
 };
 
 export type ScanicCapture = {
@@ -34,9 +41,15 @@ export type ScanicCapture = {
   width: number;
   height: number;
   detectionMode: ScanicDetectionMode;
+  corners?: ScanicCorners | null;
+  confidence?: number | null;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  detectionFrame?: ScanicFrameDimensions | null;
+  displayFrame?: ScanicFrameDimensions | null;
+  needsCornerReview?: boolean;
 };
 
 export type ScanicCorners = CornerPoints;
 
 export type ScanicOptions = DetectionOptions;
-
