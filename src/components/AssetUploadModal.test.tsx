@@ -78,10 +78,10 @@ describe("AssetUploadModal", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("surfaces a TypeError thrown by the R2 upload instead of silently queueing while online", async () => {
+  it("retries through the same-origin relay when the R2 upload rejects while online", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url.includes("/api/files/upload-url")) {
         return new Response(
@@ -89,7 +89,21 @@ describe("AssetUploadModal", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      // Simulate CORS rejection on the cross-origin R2 PUT.
+      if (url.includes("/api/files/upload-body")) {
+        expect(init?.method).toBe("POST");
+        expect(init?.headers).toEqual({
+          "Content-Type": "application/pdf",
+          "X-Object-Key": "key-1",
+        });
+        expect(init?.body).toBe(file);
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("/api/files")) {
+        return new Response(JSON.stringify({ id: "file-1" }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       throw new TypeError("Load failed");
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -109,10 +123,10 @@ describe("AssetUploadModal", () => {
     fireEvent.submit(fileInput.closest("form")!);
 
     await waitFor(() => {
-      expect(screen.getByText(/load failed/i)).toBeTruthy();
+      expect(onClose).toHaveBeenCalledOnce();
     });
     expect(offlineQueueMocks.queueOfflineFile).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText(/load failed/i)).toBeNull();
   });
 
   it("uploads the PDF returned by the Scanic scanner provider with scan metadata", async () => {

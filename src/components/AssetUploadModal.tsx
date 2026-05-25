@@ -42,6 +42,49 @@ function isNetworkUploadError() {
   return isOffline();
 }
 
+async function uploadPreparedFile(input: {
+  uploadUrl: string;
+  objectKey: string;
+  contentType: string;
+  body: Blob;
+}) {
+  try {
+    const r2Response = await fetch(input.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": input.contentType },
+      body: input.body,
+    });
+
+    if (!r2Response.ok) {
+      throw new Error("Cloudflare R2 upload failed.");
+    }
+  } catch (error) {
+    if (!(error instanceof TypeError) || isOffline()) {
+      throw error;
+    }
+
+    const relayResponse = await fetch("/api/files/upload-body", {
+      method: "POST",
+      headers: {
+        "Content-Type": input.contentType,
+        "X-Object-Key": input.objectKey,
+      },
+      body: input.body,
+    });
+
+    if (!relayResponse.ok) {
+      let message = "Cloudflare R2 upload failed.";
+      try {
+        const payload = await relayResponse.json();
+        if (typeof payload.error === "string") message = payload.error;
+      } catch {
+        // Keep the generic storage error when the relay cannot return JSON.
+      }
+      throw new Error(message);
+    }
+  }
+}
+
 type ScanUploadMetadata = {
   sourceType: "scan";
   scannedPageCount: number;
@@ -166,15 +209,12 @@ export function AssetUploadModal({
       }
 
       setStatus("Uploading to secure storage...");
-      const r2Response = await fetch(uploadUrlPayload.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": uploadContentType },
+      await uploadPreparedFile({
+        uploadUrl: uploadUrlPayload.uploadUrl,
+        objectKey: uploadUrlPayload.objectKey,
+        contentType: uploadContentType,
         body: preparedFile,
       });
-
-      if (!r2Response.ok) {
-        throw new Error("Cloudflare R2 upload failed.");
-      }
 
       setStatus("Saving to job folder...");
       const fileResponse = await fetch("/api/files", {
