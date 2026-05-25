@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { createDefaultCorners } from "./scanicGeometry";
@@ -17,6 +17,14 @@ type Props = {
   onAccept: (capture: ScanicCapture) => void;
   onRetake: () => void;
   onError: (message: string) => void;
+};
+
+type CorrectedPreview = {
+  blob: Blob;
+  objectUrl: string;
+  width: number;
+  height: number;
+  corners: ScanicCorners;
 };
 
 const CORNER_KEYS: CornerKey[] = ["topLeft", "topRight", "bottomRight", "bottomLeft"];
@@ -59,6 +67,32 @@ function getSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
   return point.matrixTransform(matrix.inverse());
 }
 
+async function createCorrectedPreview(input: {
+  capture: ScanicCapture;
+  objectUrl: string;
+  corners: ScanicCorners;
+}): Promise<Omit<CorrectedPreview, "objectUrl">> {
+  const scanic = await import("scanic");
+  const image = await loadImage(input.objectUrl);
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = input.capture.width;
+  sourceCanvas.height = input.capture.height;
+  getCanvasContext(sourceCanvas).drawImage(image, 0, 0, input.capture.width, input.capture.height);
+
+  const extracted = await scanic.extractDocument(sourceCanvas, input.corners, { output: "canvas" });
+  if (!extracted.success || !(extracted.output instanceof HTMLCanvasElement)) {
+    throw new Error(extracted.message || "Could not correct the page perspective.");
+  }
+
+  const pageImage = await createJpegBlobFromCanvas(extracted.output);
+  return {
+    blob: pageImage.blob,
+    width: pageImage.width,
+    height: pageImage.height,
+    corners: cloneCorners(input.corners),
+  };
+}
+
 export function ScanicCornerReview({ capture, objectUrl, onAccept, onRetake, onError }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [corners, setCorners] = useState<ScanicCorners>(
@@ -66,12 +100,53 @@ export function ScanicCornerReview({ capture, objectUrl, onAccept, onRetake, onE
   );
   const [activeCorner, setActiveCorner] = useState<CornerKey | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPreviewProcessing, setIsPreviewProcessing] = useState(false);
+  const [correctedPreview, setCorrectedPreview] = useState<CorrectedPreview | null>(null);
 
   const status = useMemo(() => {
     if (capture.detectionMode === "fallback") return "Set the page corners";
     if (capture.confidence) return `Review corners - ${Math.round(capture.confidence * 100)}% confidence`;
     return "Review corners";
   }, [capture.confidence, capture.detectionMode]);
+
+  useEffect(() => () => {
+    if (correctedPreview) URL.revokeObjectURL(correctedPreview.objectUrl);
+  }, [correctedPreview]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      setIsPreviewProcessing(true);
+      try {
+        const preview = await createCorrectedPreview({ capture, objectUrl, corners });
+        const nextPreview = {
+          ...preview,
+          objectUrl: URL.createObjectURL(preview.blob),
+        };
+
+        if (cancelled) {
+          URL.revokeObjectURL(nextPreview.objectUrl);
+          return;
+        }
+
+        setCorrectedPreview((currentPreview) => {
+          if (currentPreview) URL.revokeObjectURL(currentPreview.objectUrl);
+          return nextPreview;
+        });
+      } catch (error) {
+        if (!cancelled) {
+          onError(error instanceof Error ? error.message : "Could not prepare the corrected preview.");
+        }
+      } finally {
+        if (!cancelled) setIsPreviewProcessing(false);
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [capture, corners, objectUrl, onError]);
 
   function updateCorner(corner: CornerKey, clientX: number, clientY: number) {
     const svg = svgRef.current;
@@ -91,19 +166,9 @@ export function ScanicCornerReview({ capture, objectUrl, onAccept, onRetake, onE
   async function handleAccept() {
     setIsProcessing(true);
     try {
-      const scanic = await import("scanic");
-      const image = await loadImage(objectUrl);
-      const sourceCanvas = document.createElement("canvas");
-      sourceCanvas.width = capture.width;
-      sourceCanvas.height = capture.height;
-      getCanvasContext(sourceCanvas).drawImage(image, 0, 0, capture.width, capture.height);
-
-      const extracted = await scanic.extractDocument(sourceCanvas, corners, { output: "canvas" });
-      if (!extracted.success || !(extracted.output instanceof HTMLCanvasElement)) {
-        throw new Error(extracted.message || "Could not correct the page perspective.");
-      }
-
-      const pageImage = await createJpegBlobFromCanvas(extracted.output);
+      const pageImage = correctedPreview && getPoints(correctedPreview.corners) === getPoints(corners)
+        ? correctedPreview
+        : await createCorrectedPreview({ capture, objectUrl, corners });
       onAccept({
         ...capture,
         blob: pageImage.blob,
@@ -120,11 +185,25 @@ export function ScanicCornerReview({ capture, objectUrl, onAccept, onRetake, onE
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-800 bg-black">
+      <div className="relative min-h-[260px] flex-[1.15] overflow-hidden rounded-lg border border-zinc-800 bg-black">
+        {correctedPreview ? (
+          <img
+            src={correctedPreview.objectUrl}
+            alt="Perspective-corrected page preview"
+            className="h-full max-h-[44vh] w-full object-contain"
+          />
+        ) : (
+          <div className="flex h-full min-h-[260px] items-center justify-center text-sm text-zinc-500">
+            {isPreviewProcessing ? "Preparing preview..." : "Preview unavailable"}
+          </div>
+        )}
+      </div>
+
+      <div className="relative min-h-[150px] flex-[0.85] overflow-hidden rounded-lg border border-zinc-800 bg-black">
         <img
           src={objectUrl}
           alt="Captured page awaiting corner review"
-          className="h-full max-h-[58vh] w-full object-contain"
+          className="h-full max-h-[28vh] w-full object-contain opacity-70"
         />
         <svg
           ref={svgRef}
