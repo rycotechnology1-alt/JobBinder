@@ -91,6 +91,7 @@ async function syncFile(fetchImpl: FetchLike, item: OfflineFileQueueItem) {
     originalName: item.payload.originalName,
     name: item.payload.name,
     contentType: item.payload.contentType,
+    sizeBytes: item.payload.blob.size,
     category: item.payload.category,
     createdAt: item.createdAt,
     clientMutationId: item.clientMutationId,

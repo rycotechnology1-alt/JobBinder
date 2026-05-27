@@ -31,6 +31,10 @@ const DOCUMENT_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "text/csv",
 ]);
 
 const EXTENSION_MIME_TYPES: Record<string, string> = {
@@ -43,6 +47,10 @@ const EXTENSION_MIME_TYPES: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xls: "application/vnd.ms-excel",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain",
+  csv: "text/csv",
 };
 
 export function normalizeAssetCategory(category: unknown): AssetCategory {
@@ -73,6 +81,7 @@ type UploadInput = {
   originalName?: unknown;
   objectKey?: unknown;
   contentType?: unknown;
+  sizeBytes?: unknown;
   category?: unknown;
 };
 
@@ -80,6 +89,7 @@ type ValidUploadInput = {
   originalName: string;
   objectKey: string;
   contentType: string;
+  sizeBytes: number | null;
   category: AssetCategory;
   type: FileType;
 };
@@ -99,12 +109,17 @@ export function validateFileUploadInput(
   const type = getFileTypeForMime(contentType);
   if (!type) return { ok: false, error: "Unsupported file type" };
 
+  const sizeBytes = typeof input.sizeBytes === "number" && Number.isFinite(input.sizeBytes) && input.sizeBytes >= 0
+    ? Math.round(input.sizeBytes)
+    : null;
+
   return {
     ok: true,
     value: {
       originalName,
       objectKey,
       contentType,
+      sizeBytes,
       category: normalizeAssetCategory(input.category),
       type,
     },

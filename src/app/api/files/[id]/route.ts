@@ -23,12 +23,26 @@ export async function DELETE(
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
+    const previewArtifacts = await prisma.filePreviewArtifact.findMany({
+      where: { fileId: file.id },
+      select: { storageKey: true },
+    });
+
     await prisma.file.delete({ where: { id: file.id } });
 
-    try {
-      await deleteR2Object(file.url);
-    } catch (cleanupError) {
-      console.warn("File storage cleanup failed:", cleanupError);
+    const cleanupKeys = [
+      file.url,
+      ...previewArtifacts
+        .map((artifact) => artifact.storageKey)
+        .filter((storageKey): storageKey is string => Boolean(storageKey)),
+    ];
+
+    for (const storageKey of cleanupKeys) {
+      try {
+        await deleteR2Object(storageKey);
+      } catch (cleanupError) {
+        console.warn("File storage cleanup failed:", cleanupError);
+      }
     }
 
     return NextResponse.json({ success: true });

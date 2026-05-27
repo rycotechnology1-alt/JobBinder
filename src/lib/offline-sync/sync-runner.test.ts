@@ -140,6 +140,7 @@ describe("offline sync runner", () => {
           originalName: "before.jpg",
           name: "Before cabinet",
           contentType: "image/jpeg",
+          sizeBytes: queued.payload.blob.size,
           category: "Before",
           createdAt: queued.createdAt,
           clientMutationId: queued.clientMutationId,

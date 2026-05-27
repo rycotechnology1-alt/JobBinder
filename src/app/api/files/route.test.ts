@@ -144,8 +144,29 @@ describe("POST /api/files", () => {
         jobId: "job-1",
         uploaderId: "user-1",
         originalName: "before.jpg",
+        contentType: "image/jpeg",
         createdAt: new Date("2026-05-14T12:00:00.000Z"),
         clientMutationId: "offline-2",
+      }),
+    });
+  });
+
+  it("stores content type and optional size metadata for new files", async () => {
+    const response = await postFile({
+      jobId: "job-1",
+      objectKey: "company-1/deck.pptx",
+      originalName: "deck.pptx",
+      contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      sizeBytes: 456789,
+      category: "Plans",
+    });
+
+    expect(response.status).toBe(201);
+    expect(fileCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "DOCUMENT",
+        contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        sizeBytes: 456789,
       }),
     });
   });

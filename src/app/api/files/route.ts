@@ -57,6 +57,8 @@ export async function POST(req: NextRequest) {
         originalName: validation.value.originalName,
         name: normalizeFileDisplayName(body.name),
         category: validation.value.category,
+        contentType: validation.value.contentType,
+        sizeBytes: validation.value.sizeBytes,
         ...(clientMutationId ? { clientMutationId } : {}),
         ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
       },

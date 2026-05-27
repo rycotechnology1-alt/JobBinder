@@ -28,6 +28,12 @@ const ACCEPTED_UPLOAD_TYPES = [
   ".docx",
   ".xls",
   ".xlsx",
+  ".ppt",
+  ".pptx",
+  "text/plain",
+  "text/csv",
+  ".txt",
+  ".csv",
 ].join(",");
 
 function isOffline() {
@@ -226,6 +232,7 @@ export function AssetUploadModal({
           originalName: sourceFile.name,
           name: formData.get("name"),
           contentType: uploadContentType,
+          sizeBytes: preparedFile.size,
           category,
           ...(scanUploadMetadata ?? {}),
         }),

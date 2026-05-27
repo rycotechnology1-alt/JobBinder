@@ -46,6 +46,9 @@ describe("asset category and file rules", () => {
     expect(getFileTypeForMime("application/pdf")).toBe("DOCUMENT");
     expect(getFileTypeForMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("DOCUMENT");
     expect(getFileTypeForMime("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).toBe("DOCUMENT");
+    expect(getFileTypeForMime("application/vnd.openxmlformats-officedocument.presentationml.presentation")).toBe("DOCUMENT");
+    expect(getFileTypeForMime("text/plain")).toBe("DOCUMENT");
+    expect(getFileTypeForMime("text/csv")).toBe("DOCUMENT");
     expect(getFileTypeForMime("application/x-msdownload")).toBeNull();
   });
 
@@ -54,6 +57,9 @@ describe("asset category and file rules", () => {
     expect(getMimeTypeForFilename("permit.pdf")).toBe("application/pdf");
     expect(getMimeTypeForFilename("scope.docx")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     expect(getMimeTypeForFilename("costs.xlsx")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    expect(getMimeTypeForFilename("deck.pptx")).toBe("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    expect(getMimeTypeForFilename("notes.txt")).toBe("text/plain");
+    expect(getMimeTypeForFilename("materials.csv")).toBe("text/csv");
     expect(getMimeTypeForFilename("run-me.exe")).toBeNull();
   });
 
@@ -71,6 +77,7 @@ describe("asset category and file rules", () => {
         originalName: "permit.pdf",
         objectKey: "company/file.pdf",
         contentType: "application/pdf",
+        sizeBytes: null,
         category: "Permits",
         type: "DOCUMENT",
       },

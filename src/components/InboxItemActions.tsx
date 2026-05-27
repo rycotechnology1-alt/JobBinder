@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink } from "lucide-react";
+import { Eye } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { FileViewerOverlay } from "@/components/FileViewerOverlay";
 
 type InboxItemType = "note" | "file";
 
@@ -25,28 +26,8 @@ export function InboxItemActions({ itemType, itemId, jobs }: Props) {
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState(jobs[0]?.id ?? "");
   const [isAssigning, setIsAssigning] = useState(false);
-  const [isOpeningFile, setIsOpeningFile] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  async function handleViewFile() {
-    setError(null);
-    setIsOpeningFile(true);
-
-    try {
-      const response = await fetch(`/api/files/${itemId}/access-url`);
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not open file.");
-      }
-
-      window.open(payload.accessUrl, "_blank", "noopener,noreferrer");
-    } catch (viewError) {
-      setError(viewError instanceof Error ? viewError.message : "Could not open file.");
-    } finally {
-      setIsOpeningFile(false);
-    }
-  }
 
   async function handleAssign() {
     if (!selectedJobId) {
@@ -86,12 +67,11 @@ export function InboxItemActions({ itemType, itemId, jobs }: Props) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleViewFile}
-            disabled={isOpeningFile}
+            onClick={() => setIsPreviewOpen(true)}
             className="gap-2"
           >
-            <ExternalLink size={15} />
-            {isOpeningFile ? "Opening..." : "View"}
+            <Eye size={15} />
+            View
           </Button>
         )}
         <Button type="button" variant="secondary" size="sm" onClick={() => setIsAssignOpen(true)}>
@@ -144,6 +124,9 @@ export function InboxItemActions({ itemType, itemId, jobs }: Props) {
           </div>
         </div>
       </Modal>
+      {itemType === "file" && (
+        <FileViewerOverlay fileId={itemId} isOpen={isPreviewOpen} onClose={() => setIsPreviewOpen(false)} />
+      )}
     </>
   );
 }

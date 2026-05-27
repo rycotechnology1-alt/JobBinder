@@ -57,14 +57,10 @@ describe("InboxItemActions", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it("opens file previews and assigns files through the file API", async () => {
+  it("opens an in-app file preview and assigns files through the file API", async () => {
     const open = vi.fn();
     vi.stubGlobal("open", open);
     vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ accessUrl: "https://files.example.com/file-1.pdf" }),
-      } as Response)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ id: "file-1", jobId: "job-2" }),
@@ -73,9 +69,8 @@ describe("InboxItemActions", () => {
     render(<InboxItemActions itemType="file" itemId="file-1" jobs={jobs} />);
 
     await user.click(screen.getByRole("button", { name: "View" }));
-    await waitFor(() => {
-      expect(open).toHaveBeenCalledWith("https://files.example.com/file-1.pdf", "_blank", "noopener,noreferrer");
-    });
+    expect(await screen.findByRole("dialog", { name: "File preview" })).toBeTruthy();
+    expect(open).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Assign to Job" }));
     await user.click(screen.getByLabelText("Deck Repair"));
