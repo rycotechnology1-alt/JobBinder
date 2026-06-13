@@ -26,12 +26,12 @@ model Company {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users            User[]
-  jobs             Job[]
-  notes            Note[]
-  files            File[]
-  tasks            Task[]
-  invites          Invite[]
+  users   User[]
+  jobs    Job[]
+  notes   Note[]
+  files   File[]
+  tasks   Task[]
+  invites Invite[]
 }
 
 enum Role {
@@ -40,26 +40,27 @@ enum Role {
 }
 
 model User {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   companyId      String?
-  email          String?  @unique // Nullable to support SMS invites
+  email          String?   @unique // Nullable to support SMS invites
   emailVerified  DateTime?
   image          String?
-  phone          String?  @unique
+  phone          String?   @unique
   name           String?
-  role           Role     @default(MEMBER)
+  role           Role      @default(MEMBER)
   hashedPassword String?
 
-  company        Company? @relation(fields: [companyId], references: [id])
-  accounts       Account[]
-  sessions       Session[]
-  
-  jobsCreated    Job[]
-  notes          Note[]
-  files          File[]
-  tasksCreated   Task[]
-  tasksAssigned  Task[]   @relation("AssignedTasks")
-  exports        Export[]
+  company  Company?  @relation(fields: [companyId], references: [id])
+  accounts Account[]
+  sessions Session[]
+
+  jobsCreated   Job[]
+  notes         Note[]
+  files         File[]
+  tasksCreated  Task[]
+  tasksAssigned Task[]           @relation("AssignedTasks")
+  exports       Export[]
+  markupMarks   FileMarkupMark[]
 }
 
 model Account {
@@ -76,7 +77,7 @@ model Account {
   id_token          String? @db.Text
   session_state     String?
 
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -87,7 +88,7 @@ model Session {
   userId       String
   expires      DateTime
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
@@ -108,7 +109,7 @@ model Invite {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, email])
   @@index([email])
@@ -120,7 +121,7 @@ model Invite {
 
 enum JobStatus {
   DESIGN
-  ACTIVE      // "N Days Left" will be calculated dynamically if targetCompletionDate is set
+  ACTIVE // "N Days Left" will be calculated dynamically if targetCompletionDate is set
   DELAY
   PUNCH_LIST
   FINAL_BILL_SUBMITTED
@@ -143,18 +144,18 @@ model Job {
   priority             Int       @default(3) // 1-5 scale
   targetCompletionDate DateTime?
   description          String?
-  
-  createdById          String
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
 
-  company              Company   @relation(fields: [companyId], references: [id])
-  createdBy            User      @relation(fields: [createdById], references: [id])
-  
-  notes                Note[]
-  files                File[]
-  tasks                Task[]
-  exports              Export[]
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  notes   Note[]
+  files   File[]
+  tasks   Task[]
+  exports Export[]
 }
 
 // ---------------------------------------------------------------------------
@@ -167,25 +168,25 @@ enum NoteType {
 }
 
 model Note {
-  id          String   @id @default(cuid())
-  companyId   String
-  jobId       String?  // If NULL, this is an Inbox Item
-  authorId    String
-  type        NoteType @default(GENERAL)
-  content     String
-  category    String?  // e.g., "Material issue", "Customer conversation"
-  
-  statusTag   String?  // Used for Progress logs
+  id        String   @id @default(cuid())
+  companyId String
+  jobId     String? // If NULL, this is an Inbox Item
+  authorId  String
+  type      NoteType @default(GENERAL)
+  content   String
+  category  String? // e.g., "Material issue", "Customer conversation"
+
+  statusTag        String? // Used for Progress logs
   clientMutationId String?
 
-  createdAt   DateTime @default(now()) // Can be set by client for offline captures
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now()) // Can be set by client for offline captures
+  updatedAt DateTime @updatedAt
 
-  company     Company  @relation(fields: [companyId], references: [id])
-  job         Job?     @relation(fields: [jobId], references: [id])
-  author      User     @relation(fields: [authorId], references: [id])
-  
-  files       File[]   @relation("NoteFiles")
+  company Company @relation(fields: [companyId], references: [id])
+  job     Job?    @relation(fields: [jobId], references: [id])
+  author  User    @relation(fields: [authorId], references: [id])
+
+  files File[] @relation("NoteFiles")
 
   @@unique([companyId, clientMutationId])
 }
@@ -200,36 +201,86 @@ enum FileType {
 }
 
 model File {
-  id                   String   @id @default(cuid())
-  companyId            String
-  jobId                String?  // If NULL, this is an Inbox Item
-  uploaderId           String
-  type                 FileType
-  url                  String
-  originalName         String
-  name                 String?  // Edited or AI-suggested
-  category             String?  // Edited or AI-suggested
-  contentType          String?
-  sizeBytes            Int?
-  
+  id           String   @id @default(cuid())
+  companyId    String
+  jobId        String? // If NULL, this is an Inbox Item
+  uploaderId   String
+  type         FileType
+  url          String
+  originalName String
+  name         String? // Edited or AI-suggested
+  category     String? // Edited or AI-suggested
+  contentType  String?
+  sizeBytes    Int?
+
   // AI Metadata
-  aiSuggestedName      String?
-  aiSuggestedCategory  String?
+  aiSuggestedName     String?
+  aiSuggestedCategory String?
 
-  noteId               String?
-  taskId               String?
-  clientMutationId     String?
+  noteId           String?
+  taskId           String?
+  clientMutationId String?
 
-  createdAt            DateTime @default(now()) // Can be set by client for offline captures
-  updatedAt            DateTime @updatedAt
+  createdAt DateTime @default(now()) // Can be set by client for offline captures
+  updatedAt DateTime @updatedAt
 
-  company              Company  @relation(fields: [companyId], references: [id])
-  job                  Job?     @relation(fields: [jobId], references: [id])
-  uploader             User     @relation(fields: [uploaderId], references: [id])
-  note                 Note?    @relation("NoteFiles", fields: [noteId], references: [id])
-  task                 Task?    @relation("TaskFiles", fields: [taskId], references: [id])
+  company      Company           @relation(fields: [companyId], references: [id])
+  job          Job?              @relation(fields: [jobId], references: [id])
+  uploader     User              @relation(fields: [uploaderId], references: [id])
+  note         Note?             @relation("NoteFiles", fields: [noteId], references: [id])
+  task         Task?             @relation("TaskFiles", fields: [taskId], references: [id])
+  markupMarks  FileMarkupMark[]
+  markupExport FileMarkupExport?
 
   @@unique([companyId, clientMutationId])
+}
+
+// ---------------------------------------------------------------------------
+// File markup (annotations) — re-editable marks + flattened export artifact
+// ---------------------------------------------------------------------------
+
+enum MarkupMarkKind {
+  PEN
+  ELLIPSE
+  ARROW
+  CLOUD
+  PIN
+}
+
+model FileMarkupMark {
+  id              String         @id // client-generated (uuid) — stable across offline replay
+  fileId          String
+  companyId       String // scoping, mirrors File
+  authorId        String
+  page            Int            @default(1) // 1-based; images = page 1
+  kind            MarkupMarkKind
+  geometry        Json // normalized 0..1 coordinates
+  style           Json // { color, strokeWidth, opacity }
+  text            String? // PIN comment
+  sequence        Int            @default(0) // creation order → pin numbering
+  deletedAt       DateTime? // soft delete so deletes merge across clients
+  clientUpdatedAt DateTime // client timestamp → per-mark last-write-wins
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  file   File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([fileId])
+  @@index([companyId])
+}
+
+model FileMarkupExport {
+  id          String    @id @default(cuid())
+  fileId      String    @unique // 1:1 with the original File
+  storageKey  String? // R2 key of the flattened PDF
+  contentType String    @default("application/pdf")
+  isStale     Boolean   @default(true) // true whenever a mark changes after last export
+  generatedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
 }
 
 // ---------------------------------------------------------------------------
@@ -248,29 +299,29 @@ enum TaskType {
 }
 
 model Task {
-  id           String     @id @default(cuid())
-  companyId    String
-  jobId        String
-  title        String
-  description  String?
-  status       TaskStatus @default(OPEN)
-  type         TaskType   @default(TASK)
-  priority     Int?
-  dueDate      DateTime?
-  
-  createdById  String
-  assignedToId String?
+  id          String     @id @default(cuid())
+  companyId   String
+  jobId       String
+  title       String
+  description String?
+  status      TaskStatus @default(OPEN)
+  type        TaskType   @default(TASK)
+  priority    Int?
+  dueDate     DateTime?
+
+  createdById      String
+  assignedToId     String?
   clientMutationId String?
 
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  company      Company    @relation(fields: [companyId], references: [id])
-  job          Job        @relation(fields: [jobId], references: [id])
-  createdBy    User       @relation(fields: [createdById], references: [id])
-  assignedTo   User?      @relation("AssignedTasks", fields: [assignedToId], references: [id])
-  
-  files        File[]     @relation("TaskFiles")
+  company    Company @relation(fields: [companyId], references: [id])
+  job        Job     @relation(fields: [jobId], references: [id])
+  createdBy  User    @relation(fields: [createdById], references: [id])
+  assignedTo User?   @relation("AssignedTasks", fields: [assignedToId], references: [id])
+
+  files File[] @relation("TaskFiles")
 
   @@unique([companyId, clientMutationId])
 }
@@ -280,20 +331,20 @@ model Task {
 // ---------------------------------------------------------------------------
 
 model Export {
-  id              String    @id @default(cuid())
-  jobId           String
-  createdById     String
-  destination     String    // "ZIP" | "SHARE_LINK" | "GOOGLE_DRIVE" | "ONEDRIVE"
-  status          String    // "PENDING" | "PROCESSING" | "READY" | "FAILED" | "EXPIRED"
-  optionsJson     String    // Stores serialized selection options
-  fileName        String?
-  storageKey      String?   // R2 key for the generated ZIP
-  downloadUrl     String?
-  expiresAt       DateTime?
-  createdAt       DateTime  @default(now())
-  completedAt     DateTime?
-  errorMessage    String?
+  id           String    @id @default(cuid())
+  jobId        String
+  createdById  String
+  destination  String // "ZIP" | "SHARE_LINK" | "GOOGLE_DRIVE" | "ONEDRIVE"
+  status       String // "PENDING" | "PROCESSING" | "READY" | "FAILED" | "EXPIRED"
+  optionsJson  String // Stores serialized selection options
+  fileName     String?
+  storageKey   String? // R2 key for the generated ZIP
+  downloadUrl  String?
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+  errorMessage String?
 
-  job             Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  createdBy       User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  job       Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
 }

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearOfflineQueueForTests,
   enqueueOfflineFile,
+  enqueueOfflineMarkup,
   enqueueOfflineNote,
   listOfflineQueue,
   removeOfflineQueueItem,
@@ -81,5 +82,18 @@ describe("offline sync queue", () => {
     await removeOfflineQueueItem(queued.id);
 
     expect(await listOfflineQueue()).toEqual([]);
+  });
+
+  it("queues markup mutations for later sync", async () => {
+    const queued = await enqueueOfflineMarkup({
+      fileId: "file-1",
+      mutations: [{ op: "delete", id: "mark-1", clientUpdatedAt: "2026-06-13T12:00:00.000Z" }],
+    });
+
+    const [item] = await listOfflineQueue();
+    expect(item).toMatchObject({ id: queued.id, kind: "MARKUP_SAVE", status: "PENDING", jobId: null });
+    if (item.kind !== "MARKUP_SAVE") throw new Error("expected markup item");
+    expect(item.payload.fileId).toBe("file-1");
+    expect(item.payload.mutations).toHaveLength(1);
   });
 });

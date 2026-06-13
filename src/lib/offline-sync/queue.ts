@@ -1,11 +1,13 @@
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
   OfflineFileQueueItem,
+  OfflineMarkupQueueItem,
   OfflineNoteQueueItem,
   OfflineQueueItem,
   OfflineQueueStatus,
   OfflineTaskQueueItem,
   QueueOfflineFileInput,
+  QueueOfflineMarkupInput,
   QueueOfflineNoteInput,
   QueueOfflineTaskInput,
 } from "./types";
@@ -22,7 +24,11 @@ type StoredOfflineFileQueueItem = Omit<OfflineFileQueueItem, "payload"> & {
     blobType: string;
   };
 };
-type StoredOfflineQueueItem = OfflineNoteQueueItem | OfflineTaskQueueItem | StoredOfflineFileQueueItem;
+type StoredOfflineQueueItem =
+  | OfflineNoteQueueItem
+  | OfflineTaskQueueItem
+  | OfflineMarkupQueueItem
+  | StoredOfflineFileQueueItem;
 
 interface OfflineSyncDatabase extends DBSchema {
   [OFFLINE_QUEUE_STORE]: {
@@ -168,9 +174,23 @@ export async function enqueueOfflineFile(input: QueueOfflineFileInput): Promise<
   return addQueueItem(item);
 }
 
+export async function enqueueOfflineMarkup(input: QueueOfflineMarkupInput): Promise<OfflineMarkupQueueItem> {
+  const item: OfflineMarkupQueueItem = {
+    ...baseQueueItem("MARKUP_SAVE", null),
+    kind: "MARKUP_SAVE",
+    payload: {
+      fileId: input.fileId,
+      mutations: input.mutations,
+    },
+  };
+
+  return addQueueItem(item);
+}
+
 export const queueOfflineNote = enqueueOfflineNote;
 export const queueOfflineTask = enqueueOfflineTask;
 export const queueOfflineFile = enqueueOfflineFile;
+export const queueOfflineMarkup = enqueueOfflineMarkup;
 
 export async function listOfflineQueue() {
   const db = await getDatabase();

@@ -54,6 +54,15 @@ export function getPreviewMetadataUrl(fileId: string) {
   return `/api/files/${encodeURIComponent(fileId)}/preview`;
 }
 
+export function getMarkupUrl(fileId: string) {
+  return `/api/files/${encodeURIComponent(fileId)}/markup`;
+}
+
+export function getMarkupContentUrl(fileId: string, options: { download?: boolean } = {}) {
+  const suffix = options.download ? "?download=1" : "";
+  return `/api/files/${encodeURIComponent(fileId)}/markup-content${suffix}`;
+}
+
 function getExtension(filename: string) {
   const match = filename.match(/\.([A-Za-z0-9]{1,10})$/);
   return match ? `.${match[1]}` : "";

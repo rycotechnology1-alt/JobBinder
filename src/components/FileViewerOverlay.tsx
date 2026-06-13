@@ -7,35 +7,26 @@ import {
   AlertCircle,
   Download,
   FileIcon,
+  FileText,
   Loader2,
   Maximize2,
+  Pencil,
   X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { getPreviewMetadataUrl } from "@/lib/file-preview";
+import { getMarkupContentUrl, getPreviewMetadataUrl } from "@/lib/file-preview";
+import { MarkupEditor } from "@/components/markup/MarkupEditor";
+import { MarkedUpView } from "@/components/markup/MarkedUpView";
+import {
+  buildPdfTextLayer,
+  loadPdfFromUrl,
+  renderPdfPageToCanvas,
+  type PdfDocumentProxy,
+} from "@/lib/markup/pdf-render";
 
 type RenderMode = "image" | "pdf" | "text" | "csv" | "spreadsheet" | "docx" | "unsupported";
-type PdfViewport = {
-  width: number;
-  height: number;
-  transform: number[];
-};
-type PdfTextItem = {
-  str: string;
-  transform: number[];
-};
-type PdfPageProxy = {
-  getViewport: (input: { scale: number }) => PdfViewport;
-  render: (input: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<void> };
-  getTextContent: () => Promise<{ items: unknown[] }>;
-};
-type PdfDocumentProxy = {
-  numPages: number;
-  getPage: (pageNumber: number) => Promise<PdfPageProxy>;
-  destroy: () => Promise<void>;
-};
 type Size = {
   width: number;
   height: number;
@@ -55,7 +46,12 @@ type PreviewPayload = {
     category: string | null;
   };
   previewArtifact: null;
+  markup?: { hasMarkups: boolean; markCount: number };
 };
+
+function isMarkupEligible(renderMode: RenderMode): renderMode is "pdf" | "image" {
+  return renderMode === "pdf" || renderMode === "image";
+}
 
 type Props = {
   fileId: string | null;
@@ -75,6 +71,9 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
   const [payload, setPayload] = useState<PreviewPayload | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"original" | "markup">("original");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [markupReloadKey, setMarkupReloadKey] = useState(0);
 
   const loadPreview = useCallback(async () => {
     if (!fileId) return;
@@ -83,9 +82,12 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
 
     try {
       const response = await fetch(getPreviewMetadataUrl(fileId));
-      const nextPayload = await response.json();
-      if (!response.ok) throw new Error(nextPayload.error || "Could not load file preview.");
+      const nextPayload = (await response.json()) as PreviewPayload;
+      if (!response.ok) throw new Error((nextPayload as { error?: string }).error || "Could not load file preview.");
       setPayload(nextPayload);
+      // Default to the marked-up view when annotations exist, so they're visible immediately.
+      const eligible = isMarkupEligible(nextPayload.file.renderMode);
+      setViewMode(eligible && nextPayload.markup?.hasMarkups ? "markup" : "original");
     } catch (previewError) {
       setError(previewError instanceof Error ? previewError.message : "Could not load file preview.");
     } finally {
@@ -106,6 +108,17 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
 
   const file = payload?.file;
   const sizeLabel = file ? formatBytes(file.sizeBytes) : null;
+  const markupEligible = file ? isMarkupEligible(file.renderMode) : false;
+  const hasMarkups = Boolean(payload?.markup?.hasMarkups);
+  const markupMode: "pdf" | "image" = file?.renderMode === "image" ? "image" : "pdf";
+  const showingMarkup = markupEligible && viewMode === "markup";
+
+  const handleEditorClose = () => {
+    setEditorOpen(false);
+    setMarkupReloadKey((key) => key + 1);
+    setViewMode("markup");
+    void loadPreview();
+  };
 
   return createPortal(
     <div className="fixed inset-0 z-[130] bg-zinc-950 text-zinc-50">
@@ -125,7 +138,33 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {file && (
+            {file && markupEligible && hasMarkups && (
+              <div className="flex items-center rounded-lg bg-zinc-900 p-0.5" role="group" aria-label="View version">
+                <ToggleOption active={viewMode === "original"} onClick={() => setViewMode("original")}>
+                  Original
+                </ToggleOption>
+                <ToggleOption active={viewMode === "markup"} onClick={() => setViewMode("markup")}>
+                  Marked-up
+                </ToggleOption>
+              </div>
+            )}
+            {file && markupEligible && !hasMarkups && (
+              <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={() => setEditorOpen(true)}>
+                <Pencil size={14} />
+                <span className="hidden sm:inline">Mark up</span>
+              </Button>
+            )}
+            {file && showingMarkup && (
+              <a
+                href={getMarkupContentUrl(file.id, { download: true })}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-transparent px-3 text-sm font-medium text-zinc-300 transition-all hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-zinc-950"
+                title="Download the flattened marked-up PDF"
+              >
+                <FileText size={16} />
+                <span className="hidden sm:inline">Marked-up PDF</span>
+              </a>
+            )}
+            {file && !showingMarkup && (
               <a
                 href={file.downloadUrl}
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-transparent px-3 text-sm font-medium text-zinc-300 transition-all hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-2 focus:ring-offset-zinc-950"
@@ -150,15 +189,48 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
             <CenteredState icon={<Loader2 className="animate-spin" size={24} />} title="Loading preview" />
           ) : error && !payload ? (
             <CenteredState icon={<AlertCircle size={24} />} title="Could not open file" message={error} />
-          ) : file ? (
-            <PreviewSurface
-              file={file}
+          ) : file && showingMarkup ? (
+            <MarkedUpView
+              key={markupReloadKey}
+              fileId={file.id}
+              src={file.originalUrl}
+              mode={markupMode}
+              onEdit={() => setEditorOpen(true)}
             />
+          ) : file ? (
+            <PreviewSurface file={file} />
           ) : null}
         </main>
       </div>
+
+      {file && editorOpen && (
+        <MarkupEditor
+          fileId={file.id}
+          src={file.originalUrl}
+          mode={markupMode}
+          filename={file.filename}
+          onClose={handleEditorClose}
+        />
+      )}
     </div>,
     document.body,
+  );
+}
+
+function ToggleOption({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        active
+          ? "h-8 rounded-md bg-brand px-3 text-xs font-medium text-white"
+          : "h-8 rounded-md px-3 text-xs font-medium text-zinc-400 transition-colors hover:text-zinc-100"
+      }
+    >
+      {children}
+    </button>
   );
 }
 
@@ -392,14 +464,9 @@ function PdfPreview({ src }: { src: string }) {
 
     async function loadPdf() {
       setStatus("Loading PDF...");
-      const pdfjs = await import("pdfjs-dist");
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
-      const response = await fetch(src);
-      if (!response.ok) throw new Error("Could not load PDF.");
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      const document = await pdfjs.getDocument({ data: bytes }).promise as unknown as PdfDocumentProxy;
+      const document = await loadPdfFromUrl(src);
       if (isCanceled) {
-        await document.destroy();
+        void document.destroy();
         return;
       }
       setPdfDocument(document);
@@ -424,41 +491,14 @@ function PdfPreview({ src }: { src: string }) {
     async function renderPage() {
       setStatus("Rendering page...");
       const page = await currentDocument.getPage(pageNumber);
-      if (isCanceled) return;
-      const viewport = page.getViewport({ scale });
       const canvas = canvasRef.current;
       const textLayer = textLayerRef.current;
-      if (!canvas || !textLayer) return;
+      if (isCanceled || !canvas || !textLayer) return;
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
-      textLayer.style.width = `${viewport.width}px`;
-      textLayer.style.height = `${viewport.height}px`;
-      textLayer.replaceChildren();
-
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Could not prepare PDF canvas.");
-      await page.render({ canvasContext: context, viewport }).promise;
-
-      const pdfjs = await import("pdfjs-dist");
-      const textContent = await page.getTextContent();
-      for (const item of textContent.items.filter(isPdfTextItem)) {
-        const tx = pdfjs.Util.transform(viewport.transform, item.transform);
-        const span = document.createElement("span");
-        span.textContent = item.str;
-        span.style.position = "absolute";
-        span.style.left = `${tx[4]}px`;
-        span.style.top = `${tx[5] - Math.abs(tx[3])}px`;
-        span.style.fontSize = `${Math.abs(tx[3])}px`;
-        span.style.color = "transparent";
-        span.style.whiteSpace = "pre";
-        span.style.userSelect = "text";
-        textLayer.appendChild(span);
-      }
-
-      setStatus("");
+      const { viewport } = await renderPdfPageToCanvas(page, canvas, scale);
+      if (isCanceled) return;
+      await buildPdfTextLayer(page, viewport, textLayer);
+      if (!isCanceled) setStatus("");
     }
 
     renderPage().catch((error) => {
@@ -498,12 +538,6 @@ function PdfPreview({ src }: { src: string }) {
       </div>
     </div>
   );
-}
-
-function isPdfTextItem(item: unknown): item is PdfTextItem {
-  if (!item || typeof item !== "object") return false;
-  const candidate = item as { str?: unknown; transform?: unknown };
-  return typeof candidate.str === "string" && Array.isArray(candidate.transform);
 }
 
 function TextPreview({ src }: { src: string }) {

@@ -16,12 +16,17 @@ import { Modal } from "@/components/ui/Modal";
 function summarizeItem(item: OfflineQueueItem) {
   if (item.kind === "NOTE_CREATE") return item.payload.content;
   if (item.kind === "TASK_CREATE") return item.payload.title;
+  if (item.kind === "MARKUP_SAVE") {
+    const count = item.payload.mutations.length;
+    return `${count} markup change${count === 1 ? "" : "s"}`;
+  }
   return item.payload.originalName;
 }
 
 function itemTypeLabel(item: OfflineQueueItem) {
   if (item.kind === "NOTE_CREATE") return item.payload.type === "PROGRESS" ? "Progress" : "Note";
   if (item.kind === "TASK_CREATE") return item.payload.type === "PUNCH_LIST" ? "Punch list" : "Task";
+  if (item.kind === "MARKUP_SAVE") return "Markup";
   return "File";
 }
 

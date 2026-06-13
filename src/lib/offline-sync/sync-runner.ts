@@ -98,9 +98,18 @@ async function syncFile(fetchImpl: FetchLike, item: OfflineFileQueueItem) {
   });
 }
 
+async function syncMarkup(fetchImpl: FetchLike, item: OfflineQueueItem) {
+  if (item.kind !== "MARKUP_SAVE") return;
+
+  await postJson(fetchImpl, `/api/files/${encodeURIComponent(item.payload.fileId)}/markup`, {
+    mutations: item.payload.mutations,
+  });
+}
+
 async function syncItem(fetchImpl: FetchLike, item: OfflineQueueItem) {
   if (item.kind === "NOTE_CREATE") return syncNote(fetchImpl, item);
   if (item.kind === "TASK_CREATE") return syncTask(fetchImpl, item);
+  if (item.kind === "MARKUP_SAVE") return syncMarkup(fetchImpl, item);
   return syncFile(fetchImpl, item);
 }
 

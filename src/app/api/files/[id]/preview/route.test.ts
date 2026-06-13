@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireCompanyUser = vi.fn();
 const accessErrorResponse = vi.fn();
 const fileFindFirst = vi.fn();
+const markCount = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
   requireCompanyUser,
@@ -14,6 +15,9 @@ vi.mock("@/lib/prisma", () => ({
   default: {
     file: {
       findFirst: fileFindFirst,
+    },
+    fileMarkupMark: {
+      count: markCount,
     },
   },
 }));
@@ -30,6 +34,7 @@ describe("/api/files/[id]/preview", () => {
     vi.clearAllMocks();
     requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
     accessErrorResponse.mockReturnValue(null);
+    markCount.mockResolvedValue(0);
     fileFindFirst.mockResolvedValue({
       id: "file-1",
       type: "DOCUMENT",
@@ -79,6 +84,21 @@ describe("/api/files/[id]/preview", () => {
         spreadsheetPreviewUrl: "/api/files/file-1/spreadsheet-preview",
       },
       previewArtifact: null,
+    });
+  });
+
+  it("reports markup presence so the viewer can offer the Original/Marked-up toggle", async () => {
+    markCount.mockResolvedValueOnce(3);
+    const response = await getPreview();
+    expect(await response.json()).toMatchObject({
+      markup: { hasMarkups: true, markCount: 3 },
+    });
+  });
+
+  it("reports no markup when the file has none", async () => {
+    const response = await getPreview();
+    expect(await response.json()).toMatchObject({
+      markup: { hasMarkups: false, markCount: 0 },
     });
   });
 });

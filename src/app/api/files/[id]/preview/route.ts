@@ -40,6 +40,9 @@ export async function GET(
 
     const filename = file.name || file.originalName;
     const previewInfo = getFilePreviewInfo({ filename, contentType: file.contentType });
+    const markCount = await prisma.fileMarkupMark.count({
+      where: { fileId: file.id, deletedAt: null },
+    });
     return NextResponse.json({
       file: {
         id: file.id,
@@ -55,6 +58,7 @@ export async function GET(
         spreadsheetPreviewUrl: previewInfo.renderMode === "spreadsheet" ? getSpreadsheetPreviewUrl(file.id) : null,
       },
       previewArtifact: null,
+      markup: { hasMarkups: markCount > 0, markCount },
     });
   } catch (error) {
     const authResponse = accessErrorResponse(error);

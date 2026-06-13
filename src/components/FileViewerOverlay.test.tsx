@@ -28,7 +28,7 @@ vi.mock("docx-preview", () => docxPreviewMocks);
 describe("FileViewerOverlay", () => {
   beforeEach(() => {
     docxPreviewMocks.renderAsync.mockClear();
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getMockRect() {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getMockRect(this: HTMLElement) {
       if (this.dataset.testid === "docx-preview-viewport") {
         return {
           width: 360,

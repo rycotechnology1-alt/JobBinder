@@ -1,6 +1,8 @@
+import type { MarkMutation } from "@/lib/markup/types";
+
 export type OfflineQueueStatus = "PENDING" | "SYNCING" | "FAILED";
 
-export type OfflineQueueKind = "NOTE_CREATE" | "TASK_CREATE" | "FILE_UPLOAD";
+export type OfflineQueueKind = "NOTE_CREATE" | "TASK_CREATE" | "FILE_UPLOAD" | "MARKUP_SAVE";
 
 type OfflineQueueBase = {
   id: string;
@@ -43,10 +45,19 @@ export type OfflineFileQueueItem = OfflineQueueBase & {
   };
 };
 
+export type OfflineMarkupQueueItem = OfflineQueueBase & {
+  kind: "MARKUP_SAVE";
+  payload: {
+    fileId: string;
+    mutations: MarkMutation[];
+  };
+};
+
 export type OfflineQueueItem =
   | OfflineNoteQueueItem
   | OfflineTaskQueueItem
-  | OfflineFileQueueItem;
+  | OfflineFileQueueItem
+  | OfflineMarkupQueueItem;
 
 export type QueueOfflineNoteInput = {
   jobId?: string | null;
@@ -71,4 +82,9 @@ export type QueueOfflineFileInput = {
   contentType: string;
   category: string;
   blob: Blob;
+};
+
+export type QueueOfflineMarkupInput = {
+  fileId: string;
+  mutations: MarkMutation[];
 };

@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearOfflineQueueForTests,
   enqueueOfflineFile,
+  enqueueOfflineMarkup,
   enqueueOfflineNote,
   enqueueOfflineTask,
   listOfflineQueue,
 } from "./queue";
 import { syncNextQueuedItem } from "./sync-runner";
+import type { MarkMutation } from "@/lib/markup/types";
 
 describe("offline sync runner", () => {
   beforeEach(async () => {
@@ -177,5 +179,34 @@ describe("offline sync runner", () => {
       attempts: 1,
       lastError: "Could not create upload URL.",
     });
+  });
+
+  it("replays queued markup as a mutations batch to the file markup endpoint", async () => {
+    const mutations: MarkMutation[] = [
+      {
+        op: "upsert",
+        mark: {
+          id: "mark-1",
+          fileId: "",
+          page: 1,
+          kind: "PIN",
+          geometry: { x: 0.5, y: 0.5 },
+          style: { color: "#ef4444", strokeWidth: 0.004, opacity: 1 },
+          sequence: 0,
+          clientUpdatedAt: "2026-06-13T12:00:00.000Z",
+        },
+      },
+      { op: "delete", id: "mark-2", clientUpdatedAt: "2026-06-13T12:01:00.000Z" },
+    ];
+    await enqueueOfflineMarkup({ fileId: "file-1", mutations });
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+
+    await syncNextQueuedItem({ fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "/api/files/file-1/markup",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ mutations }) }),
+    );
+    expect(await listOfflineQueue()).toEqual([]);
   });
 });
