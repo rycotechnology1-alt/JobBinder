@@ -4,13 +4,15 @@
 // with the saved marks composited on top. Tapping a pin reveals its comment.
 // "Edit markup" hands off to the full editor.
 
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, ZoomIn, ZoomOut } from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
+import { ChevronLeft, ChevronRight, Maximize2, Pencil, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useMarkupStore } from "@/lib/markup/useMarkupStore";
 import type { Mark } from "@/lib/markup/types";
+import type { Size } from "@/lib/markup/viewport";
 import { MarkupCanvasLayer } from "./MarkupCanvasLayer";
 import { PageSurface } from "./PageSurface";
+import { useMarkupViewport } from "./useMarkupViewport";
 
 type Props = {
   fileId: string;
@@ -19,13 +21,26 @@ type Props = {
   onEdit: () => void;
 };
 
+const EMPTY_SIZE: Size = { width: 0, height: 0 };
+const NO_SELECT_STYLE: CSSProperties & { WebkitTouchCallout?: string } = {
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+  userSelect: "none",
+};
+
 export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
   const store = useMarkupStore(fileId);
   const [pageNumber, setPageNumber] = useState(1);
   const [numPages, setNumPages] = useState(1);
-  const [scale, setScale] = useState(mode === "pdf" ? 1.1 : 1);
+  const [baseSize, setBaseSize] = useState<Size>(EMPTY_SIZE);
   const [status, setStatus] = useState("");
   const [activePin, setActivePin] = useState<Mark | null>(null);
+  const viewport = useMarkupViewport({
+    baseSize,
+    pageKey: mode === "pdf" ? pageNumber : src,
+    navigationEnabled: true,
+    padding: 32,
+  });
 
   const pinNumbers = useMemo(() => {
     const map = new Map<string, number>();
@@ -37,7 +52,7 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
   }, [store.marks]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full select-none flex-col" style={NO_SELECT_STYLE}>
       <div className="flex h-12 shrink-0 items-center justify-center gap-2 border-b border-zinc-800 bg-zinc-950/80 px-3">
         {mode === "pdf" && (
           <>
@@ -51,12 +66,15 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
             <div className="mx-1 h-5 w-px bg-zinc-800" />
           </>
         )}
-        <button type="button" aria-label="Zoom out" onClick={() => setScale((s) => Math.max(0.5, s - 0.2))} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <button type="button" aria-label="Zoom out" onClick={viewport.zoomOut} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomOut size={18} />
         </button>
-        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(scale * 100)}%</span>
-        <button type="button" aria-label="Zoom in" onClick={() => setScale((s) => Math.min(3, s + 0.2))} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewport.scale * 100)}%</span>
+        <button type="button" aria-label="Zoom in" onClick={viewport.zoomIn} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomIn size={18} />
+        </button>
+        <button type="button" aria-label="Fit to screen" onClick={viewport.fitToScreen} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+          <Maximize2 size={18} />
         </button>
         <div className="mx-1 h-5 w-px bg-zinc-800" />
         <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={onEdit}>
@@ -65,9 +83,22 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div
+        ref={viewport.viewportRef}
+        className="min-h-0 flex-1 overflow-auto p-4"
+        style={{ ...NO_SELECT_STYLE, touchAction: "none" }}
+        {...viewport.pointerHandlers}
+      >
         {status && <p className="mb-3 text-center text-sm text-zinc-500">{status}</p>}
-        <PageSurface mode={mode} src={src} pageNumber={pageNumber} scale={scale} onNumPages={setNumPages} onStatus={setStatus}>
+        <PageSurface
+          mode={mode}
+          src={src}
+          pageNumber={pageNumber}
+          scale={viewport.scale}
+          onNumPages={setNumPages}
+          onStatus={setStatus}
+          onBaseSize={setBaseSize}
+        >
           {(size) => (
             <MarkupCanvasLayer
               marks={store.marks}

@@ -93,10 +93,19 @@ export function MarkupCanvasLayer({
     } as Mark;
   }
 
+  function cancelDraft() {
+    dragRef.current = null;
+    setPreview(null);
+  }
+
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
     // Reject only explicitly-secondary pointers (palm/extra touches) and
     // non-primary mouse buttons; allow primary touch/pen/mouse.
-    if (event.isPrimary === false || (event.pointerType === "mouse" && event.button !== 0)) return;
+    if (event.isPrimary === false) {
+      cancelDraft();
+      return;
+    }
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     const point = toNormalized(event.clientX, event.clientY);
 
     if (readOnly) {
@@ -105,14 +114,22 @@ export function MarkupCanvasLayer({
       return;
     }
 
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-
     if (tool === "select") {
       const hit = hitTest(point);
       onSelect(hit?.id ?? null);
-      if (hit) dragRef.current = { mode: "move", start: point, original: hit };
+      if (!hit) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (hit.id === selectedId) {
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        dragRef.current = { mode: "move", start: point, original: hit };
+      }
       return;
     }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
 
     if (tool === "pin") {
       const mark = buildMark("PIN", { x: point.x, y: point.y });
@@ -136,6 +153,8 @@ export function MarkupCanvasLayer({
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
     const drag = dragRef.current;
     if (!drag) return;
+    event.preventDefault();
+    event.stopPropagation();
     const point = toNormalized(event.clientX, event.clientY);
 
     if (drag.mode === "move") {
@@ -158,7 +177,11 @@ export function MarkupCanvasLayer({
   function handlePointerUp(event: React.PointerEvent<SVGSVGElement>) {
     const drag = dragRef.current;
     dragRef.current = null;
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
+    const hadCapture = event.currentTarget.hasPointerCapture?.(event.pointerId);
+    if (!drag && !hadCapture) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (hadCapture) event.currentTarget.releasePointerCapture?.(event.pointerId);
     if (!drag) return;
     const point = toNormalized(event.clientX, event.clientY);
 
@@ -185,7 +208,13 @@ export function MarkupCanvasLayer({
     }
   }
 
+  function handlePointerCancel(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
+    cancelDraft();
+  }
+
   const cursor = readOnly ? "default" : tool === "select" ? "move" : "crosshair";
+  const touchAction = readOnly || tool === "select" ? "pan-x pan-y pinch-zoom" : "none";
 
   return (
     <svg
@@ -193,11 +222,11 @@ export function MarkupCanvasLayer({
       width={size.width}
       height={size.height}
       className="absolute inset-0"
-      style={{ touchAction: readOnly ? "auto" : "none", cursor }}
+      style={{ touchAction, cursor }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       data-testid="markup-canvas-layer"
     >
       {pageMarks.map((mark) => (

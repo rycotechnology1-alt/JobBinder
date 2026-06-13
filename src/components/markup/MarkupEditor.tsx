@@ -5,15 +5,17 @@
 // an undo/redo history. Persistence goes through useMarkupStore (optimistic +
 // debounced save).
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronLeft, ChevronRight, Loader2, ZoomIn, ZoomOut } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Loader2, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useMarkupStore, type SaveMutations } from "@/lib/markup/useMarkupStore";
 import type { Mark, MarkupTool } from "@/lib/markup/types";
+import type { Size } from "@/lib/markup/viewport";
 import { MarkupCanvasLayer } from "./MarkupCanvasLayer";
 import { MarkupToolbar, MARKUP_COLORS, STROKE_WIDTHS } from "./MarkupToolbar";
 import { PageSurface } from "./PageSurface";
+import { useMarkupViewport } from "./useMarkupViewport";
 
 type Props = {
   fileId: string;
@@ -26,6 +28,12 @@ type Props = {
 };
 
 type HistoryEntry = { undo: () => void; redo: () => void };
+const EMPTY_SIZE: Size = { width: 0, height: 0 };
+const NO_SELECT_STYLE: CSSProperties & { WebkitTouchCallout?: string } = {
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+  userSelect: "none",
+};
 
 export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Props) {
   const store = useMarkupStore(fileId, save);
@@ -34,11 +42,18 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
   const [strokeWidth, setStrokeWidth] = useState(STROKE_WIDTHS[1].value);
   const [pageNumber, setPageNumber] = useState(1);
   const [numPages, setNumPages] = useState(1);
-  const [scale, setScale] = useState(mode === "pdf" ? 1.1 : 1);
+  const [baseSize, setBaseSize] = useState<Size>(EMPTY_SIZE);
   const [status, setStatus] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
+  const navigationEnabled = tool === "select";
+  const viewport = useMarkupViewport({
+    baseSize,
+    pageKey: mode === "pdf" ? pageNumber : src,
+    navigationEnabled,
+    padding: 32,
+  });
 
   const selected = store.marks.find((m) => m.id === selectedId) ?? null;
 
@@ -109,7 +124,7 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
   const saving = store.pendingCount > 0;
 
   return createPortal(
-    <div className="fixed inset-0 z-[140] flex flex-col bg-zinc-950 text-zinc-50">
+    <div className="fixed inset-0 z-[140] flex select-none flex-col bg-zinc-950 text-zinc-50" style={NO_SELECT_STYLE}>
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 px-3 py-3 sm:px-5">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold sm:text-base">Marking up · {filename}</h2>
@@ -124,9 +139,22 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
         </Button>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-auto bg-zinc-900 p-4">
+      <main
+        ref={viewport.viewportRef}
+        className="min-h-0 flex-1 overflow-auto bg-zinc-900 p-4"
+        style={{ ...NO_SELECT_STYLE, touchAction: "none" }}
+        {...viewport.pointerHandlers}
+      >
         {status && <p className="mb-3 text-center text-sm text-zinc-400">{status}</p>}
-        <PageSurface mode={mode} src={src} pageNumber={pageNumber} scale={scale} onNumPages={setNumPages} onStatus={setStatus}>
+        <PageSurface
+          mode={mode}
+          src={src}
+          pageNumber={pageNumber}
+          scale={viewport.scale}
+          onNumPages={setNumPages}
+          onStatus={setStatus}
+          onBaseSize={setBaseSize}
+        >
           {(size) => (
             <MarkupCanvasLayer
               marks={store.marks}
@@ -165,12 +193,15 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
             <div className="mx-1 h-5 w-px bg-zinc-800" />
           </>
         )}
-        <button type="button" aria-label="Zoom out" onClick={() => setScale((s) => Math.max(0.5, s - 0.2))} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <button type="button" aria-label="Zoom out" onClick={viewport.zoomOut} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomOut size={18} />
         </button>
-        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(scale * 100)}%</span>
-        <button type="button" aria-label="Zoom in" onClick={() => setScale((s) => Math.min(3, s + 0.2))} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewport.scale * 100)}%</span>
+        <button type="button" aria-label="Zoom in" onClick={viewport.zoomIn} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomIn size={18} />
+        </button>
+        <button type="button" aria-label="Fit to screen" onClick={viewport.fitToScreen} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+          <Maximize2 size={18} />
         </button>
       </div>
 

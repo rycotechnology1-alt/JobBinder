@@ -17,12 +17,13 @@ type Props = {
   scale: number;
   onNumPages?: (numPages: number) => void;
   onStatus?: (status: string) => void;
+  onBaseSize?: (size: Size) => void;
   children: (size: Size) => ReactNode;
 };
 
 const EMPTY: Size = { width: 0, height: 0 };
 
-export function PageSurface({ mode, src, pageNumber, scale, onNumPages, onStatus, children }: Props) {
+export function PageSurface({ mode, src, pageNumber, scale, onNumPages, onStatus, onBaseSize, children }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [pdfSize, setPdfSize] = useState<Size>(EMPTY);
@@ -62,6 +63,7 @@ export function PageSurface({ mode, src, pageNumber, scale, onNumPages, onStatus
       const rendered = await renderPdfPageToCanvas(page, canvasRef.current, scale);
       if (canceled) return;
       setPdfSize({ width: rendered.width, height: rendered.height });
+      onBaseSize?.({ width: rendered.width / scale, height: rendered.height / scale });
       onStatus?.("");
     }
     render().catch((error) => onStatus?.(error instanceof Error ? error.message : "Could not render page."));
@@ -86,7 +88,11 @@ export function PageSurface({ mode, src, pageNumber, scale, onNumPages, onStatus
           ref={imgRef}
           src={src}
           alt=""
-          onLoad={(event) => setImageNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+          onLoad={(event) => {
+            const natural = { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight };
+            setImageNatural(natural);
+            onBaseSize?.(natural);
+          }}
           draggable={false}
           className="block select-none"
           style={{ width: size.width || undefined, height: size.height || undefined }}

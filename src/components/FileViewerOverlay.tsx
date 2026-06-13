@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { getMarkupContentUrl, getPreviewMetadataUrl } from "@/lib/file-preview";
 import { MarkupEditor } from "@/components/markup/MarkupEditor";
 import { MarkedUpView } from "@/components/markup/MarkedUpView";
+import { useMarkupViewport } from "@/components/markup/useMarkupViewport";
 import {
   buildPdfTextLayer,
   loadPdfFromUrl,
@@ -30,6 +31,12 @@ type RenderMode = "image" | "pdf" | "text" | "csv" | "spreadsheet" | "docx" | "u
 type Size = {
   width: number;
   height: number;
+};
+const EMPTY_SIZE: Size = { width: 0, height: 0 };
+const NO_SELECT_STYLE: React.CSSProperties & { WebkitTouchCallout?: string } = {
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+  userSelect: "none",
 };
 
 type PreviewPayload = {
@@ -121,7 +128,7 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[130] bg-zinc-950 text-zinc-50">
+    <div className="fixed inset-0 z-[130] select-none bg-zinc-950 text-zinc-50" style={NO_SELECT_STYLE}>
       <div role="dialog" aria-modal="true" aria-label="File preview" className="flex h-dvh flex-col">
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/95 px-3 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
@@ -425,7 +432,7 @@ function ImagePreview({ src, alt }: { src: string; alt: string }) {
   const [scale, setScale] = useState(1);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full select-none flex-col" style={NO_SELECT_STYLE}>
       <ViewerToolbar>
         <IconButton label="Zoom out" onClick={() => setScale((current) => Math.max(0.5, current - 0.25))}>
           <ZoomOut size={16} />
@@ -435,14 +442,15 @@ function ImagePreview({ src, alt }: { src: string; alt: string }) {
           <ZoomIn size={16} />
         </IconButton>
       </ViewerToolbar>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div className="min-h-0 flex-1 overflow-auto p-4" style={NO_SELECT_STYLE}>
         <div className="flex min-h-full items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={src}
             alt={alt}
-            className="max-h-full max-w-full object-contain transition-transform"
-            style={{ transform: `scale(${scale})`, transformOrigin: "center" }}
+            draggable={false}
+            className="max-h-full max-w-full select-none object-contain transition-transform"
+            style={{ ...NO_SELECT_STYLE, transform: `scale(${scale})`, transformOrigin: "center" }}
           />
         </div>
       </div>
@@ -455,9 +463,15 @@ function PdfPreview({ src }: { src: string }) {
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
-  const [scale, setScale] = useState(1.1);
+  const [baseSize, setBaseSize] = useState<Size>(EMPTY_SIZE);
   const [status, setStatus] = useState("Loading PDF...");
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentProxy | null>(null);
+  const viewport = useMarkupViewport({
+    baseSize,
+    pageKey: pageNumber,
+    navigationEnabled: true,
+    padding: 32,
+  });
 
   useEffect(() => {
     let isCanceled = false;
@@ -495,9 +509,11 @@ function PdfPreview({ src }: { src: string }) {
       const textLayer = textLayerRef.current;
       if (isCanceled || !canvas || !textLayer) return;
 
-      const { viewport } = await renderPdfPageToCanvas(page, canvas, scale);
+      const baseViewport = page.getViewport({ scale: 1 });
+      setBaseSize({ width: baseViewport.width, height: baseViewport.height });
+      const { viewport: pdfViewport } = await renderPdfPageToCanvas(page, canvas, viewport.scale);
       if (isCanceled) return;
-      await buildPdfTextLayer(page, viewport, textLayer);
+      await buildPdfTextLayer(page, pdfViewport, textLayer);
       if (!isCanceled) setStatus("");
     }
 
@@ -508,10 +524,10 @@ function PdfPreview({ src }: { src: string }) {
     return () => {
       isCanceled = true;
     };
-  }, [pdfDocument, pageNumber, scale]);
+  }, [pdfDocument, pageNumber, viewport.scale]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full select-none flex-col" style={NO_SELECT_STYLE}>
       <ViewerToolbar>
         <Button type="button" variant="ghost" size="sm" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => page - 1)}>
           Previous
@@ -520,19 +536,28 @@ function PdfPreview({ src }: { src: string }) {
         <Button type="button" variant="ghost" size="sm" disabled={pageCount === 0 || pageNumber >= pageCount} onClick={() => setPageNumber((page) => page + 1)}>
           Next
         </Button>
-        <IconButton label="Zoom out" onClick={() => setScale((current) => Math.max(0.6, current - 0.2))}>
+        <IconButton label="Zoom out" onClick={viewport.zoomOut}>
           <ZoomOut size={16} />
         </IconButton>
-        <IconButton label="Zoom in" onClick={() => setScale((current) => Math.min(2.4, current + 0.2))}>
+        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewport.scale * 100)}%</span>
+        <IconButton label="Zoom in" onClick={viewport.zoomIn}>
           <ZoomIn size={16} />
         </IconButton>
+        <IconButton label="Fit to screen" onClick={viewport.fitToScreen}>
+          <Maximize2 size={16} />
+        </IconButton>
       </ViewerToolbar>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div
+        ref={viewport.viewportRef}
+        className="min-h-0 flex-1 overflow-auto p-4"
+        style={{ ...NO_SELECT_STYLE, touchAction: "none" }}
+        {...viewport.pointerHandlers}
+      >
         {status && <p className="mb-3 text-center text-sm text-zinc-500">{status}</p>}
         <div className="mx-auto w-fit rounded-lg bg-white shadow-2xl">
           <div className="relative">
             <canvas ref={canvasRef} />
-            <div ref={textLayerRef} className="absolute inset-0 overflow-hidden" />
+            <div ref={textLayerRef} className="absolute inset-0 overflow-hidden select-none" style={NO_SELECT_STYLE} />
           </div>
         </div>
       </div>

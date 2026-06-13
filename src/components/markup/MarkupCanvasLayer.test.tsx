@@ -113,4 +113,62 @@ describe("MarkupCanvasLayer", () => {
     expect(onCreate).not.toHaveBeenCalled();
     expect(onPinTap).toHaveBeenCalledWith(expect.objectContaining({ id: "pin-1" }));
   });
+
+  it("allows viewport pan and pinch gestures while the pointer tool is selected", () => {
+    const { layer } = renderLayer({ tool: "select" });
+
+    expect(layer.style.touchAction).toBe("pan-x pan-y pinch-zoom");
+  });
+
+  it("blocks viewport panning while drawing with a markup tool", () => {
+    const { layer } = renderLayer({ tool: "pen" });
+
+    expect(layer.style.touchAction).toBe("none");
+  });
+
+  it("selects but does not move a mark that was not already selected", () => {
+    const ellipse: Mark = {
+      id: "ellipse-1",
+      fileId: "f",
+      page: 1,
+      kind: "ELLIPSE",
+      geometry: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      style: { color: "#ef4444", strokeWidth: 0.005, opacity: 1 },
+      sequence: 0,
+      clientUpdatedAt: "2026-06-13T12:00:00.000Z",
+    };
+    const { layer, onMove, onSelect } = renderLayer({ tool: "select", marks: [ellipse], selectedId: null });
+
+    fireEvent.pointerDown(layer, { clientX: 150, clientY: 100, pointerId: 1, isPrimary: true });
+    fireEvent.pointerMove(layer, { clientX: 250, clientY: 150, pointerId: 1 });
+    fireEvent.pointerUp(layer, { clientX: 250, clientY: 150, pointerId: 1 });
+
+    expect(onSelect).toHaveBeenCalledWith("ellipse-1");
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("moves a mark that was already selected", () => {
+    const ellipse: Mark = {
+      id: "ellipse-1",
+      fileId: "f",
+      page: 1,
+      kind: "ELLIPSE",
+      geometry: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      style: { color: "#ef4444", strokeWidth: 0.005, opacity: 1 },
+      sequence: 0,
+      clientUpdatedAt: "2026-06-13T12:00:00.000Z",
+    };
+    const { layer, onMove } = renderLayer({ tool: "select", marks: [ellipse], selectedId: "ellipse-1" });
+
+    fireEvent.pointerDown(layer, { clientX: 150, clientY: 100, pointerId: 1, isPrimary: true });
+    fireEvent.pointerMove(layer, { clientX: 250, clientY: 150, pointerId: 1 });
+    fireEvent.pointerUp(layer, { clientX: 250, clientY: 150, pointerId: 1 });
+
+    expect(onMove).toHaveBeenCalledTimes(1);
+    const geometry = onMove.mock.calls[0][1].geometry as { x: number; y: number; w: number; h: number };
+    expect(geometry.x).toBeCloseTo(0.2);
+    expect(geometry.y).toBeCloseTo(0.2);
+    expect(geometry.w).toBeCloseTo(0.2);
+    expect(geometry.h).toBeCloseTo(0.2);
+  });
 });

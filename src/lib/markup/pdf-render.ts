@@ -56,13 +56,15 @@ export async function renderPdfPageToCanvas(
   scale: number,
 ): Promise<{ viewport: PdfViewport; width: number; height: number }> {
   const viewport = page.getViewport({ scale });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
+  const outputScale = typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1);
+  const renderViewport = outputScale === 1 ? viewport : page.getViewport({ scale: scale * outputScale });
+  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
   canvas.style.width = `${viewport.width}px`;
   canvas.style.height = `${viewport.height}px`;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Could not prepare PDF canvas.");
-  await page.render({ canvasContext: context, viewport }).promise;
+  await page.render({ canvasContext: context, viewport: renderViewport }).promise;
   return { viewport, width: viewport.width, height: viewport.height };
 }
 
@@ -71,6 +73,7 @@ export async function buildPdfTextLayer(
   page: PdfPageProxy,
   viewport: PdfViewport,
   textLayer: HTMLElement,
+  options: { selectable?: boolean } = {},
 ): Promise<void> {
   const pdfjs = await getPdfjs();
   textLayer.style.width = `${viewport.width}px`;
@@ -87,7 +90,8 @@ export async function buildPdfTextLayer(
     span.style.fontSize = `${Math.abs(tx[3])}px`;
     span.style.color = "transparent";
     span.style.whiteSpace = "pre";
-    span.style.userSelect = "text";
+    span.style.userSelect = options.selectable ? "text" : "none";
+    span.style.webkitUserSelect = options.selectable ? "text" : "none";
     textLayer.appendChild(span);
   }
 }
