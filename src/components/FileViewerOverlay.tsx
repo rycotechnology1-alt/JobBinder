@@ -8,6 +8,7 @@ import {
   Download,
   FileIcon,
   Loader2,
+  Maximize2,
   X,
   ZoomIn,
   ZoomOut,
@@ -34,6 +35,10 @@ type PdfDocumentProxy = {
   numPages: number;
   getPage: (pageNumber: number) => Promise<PdfPageProxy>;
   destroy: () => Promise<void>;
+};
+type Size = {
+  width: number;
+  height: number;
 };
 
 type PreviewPayload = {
@@ -181,19 +186,45 @@ function PreviewSurface({
 }
 
 function DocxPreview({ src }: { src: string }) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const styleRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState("Loading DOCX...");
   const [error, setError] = useState<string | null>(null);
+  const [naturalSize, setNaturalSize] = useState<Size>({ width: 0, height: 0 });
+  const [fitScale, setFitScale] = useState(1);
+  const [zoom, setZoom] = useState(1);
+
+  const scale = Math.max(0.25, Math.min(3, fitScale * zoom));
 
   useEffect(() => {
     let isCanceled = false;
+    const viewport = viewportRef.current;
     const bodyContainer = bodyRef.current;
     const styleContainer = styleRef.current;
+
+    function updateFit() {
+      if (!viewport || !bodyContainer) return;
+
+      const nextSize = measureRenderedContent(bodyContainer);
+      const viewportStyle = window.getComputedStyle(viewport);
+      const horizontalPadding =
+        (Number.parseFloat(viewportStyle.paddingLeft) || 0) + (Number.parseFloat(viewportStyle.paddingRight) || 0);
+      const viewportWidth = Math.max(0, viewport.getBoundingClientRect().width - horizontalPadding);
+      const nextFitScale = nextSize.width > 0 && viewportWidth > 0
+        ? Math.min(1, viewportWidth / nextSize.width)
+        : 1;
+
+      setNaturalSize(nextSize);
+      setFitScale(nextFitScale);
+    }
 
     async function loadDocx() {
       setError(null);
       setStatus("Loading DOCX...");
+      setNaturalSize({ width: 0, height: 0 });
+      setFitScale(1);
+      setZoom(1);
 
       const response = await fetch(src);
       if (!response.ok) throw new Error("Could not load DOCX.");
@@ -214,7 +245,10 @@ function DocxPreview({ src }: { src: string }) {
         renderComments: false,
       });
 
-      if (!isCanceled) setStatus("");
+      if (!isCanceled) {
+        updateFit();
+        setStatus("");
+      }
     }
 
     loadDocx().catch((docxError) => {
@@ -224,8 +258,11 @@ function DocxPreview({ src }: { src: string }) {
       }
     });
 
+    window.addEventListener("resize", updateFit);
+
     return () => {
       isCanceled = true;
+      window.removeEventListener("resize", updateFit);
       bodyContainer?.replaceChildren();
       styleContainer?.replaceChildren();
     };
@@ -234,12 +271,55 @@ function DocxPreview({ src }: { src: string }) {
   if (error) return <CenteredState icon={<AlertCircle size={24} />} title="Could not open DOCX" message={error} />;
 
   return (
-    <div className="h-full overflow-auto bg-zinc-800 p-4 sm:p-6">
-      {status && <p className="mb-3 text-center text-sm text-zinc-400">{status}</p>}
-      <div ref={styleRef} />
-      <div ref={bodyRef} className="mx-auto max-w-fit text-zinc-950" />
+    <div className="flex h-full flex-col">
+      <ViewerToolbar>
+        <IconButton label="Zoom out" onClick={() => setZoom((current) => Math.max(0.5, current - 0.2))}>
+          <ZoomOut size={16} />
+        </IconButton>
+        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(scale * 100)}%</span>
+        <IconButton label="Zoom in" onClick={() => setZoom((current) => Math.min(3, current + 0.2))}>
+          <ZoomIn size={16} />
+        </IconButton>
+        <IconButton label="Fit width" onClick={() => setZoom(1)}>
+          <Maximize2 size={16} />
+        </IconButton>
+      </ViewerToolbar>
+      <div ref={viewportRef} data-testid="docx-preview-viewport" className="min-h-0 flex-1 overflow-auto bg-zinc-800 p-0 sm:p-6">
+        {status && <p className="p-4 text-center text-sm text-zinc-400">{status}</p>}
+        <div ref={styleRef} />
+        <div
+          data-testid="docx-preview-frame"
+          className="mx-auto"
+          style={{
+            width: naturalSize.width ? `${naturalSize.width * scale}px` : undefined,
+            height: naturalSize.height ? `${naturalSize.height * scale}px` : undefined,
+          }}
+        >
+          <div
+            ref={bodyRef}
+            data-testid="docx-preview-document"
+            className="origin-top-left text-zinc-950"
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+              width: naturalSize.width ? `${naturalSize.width}px` : undefined,
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
+}
+
+function measureRenderedContent(container: HTMLElement): Size {
+  const children = Array.from(container.children) as HTMLElement[];
+  const elements = children.length ? children : [container];
+  const rects = elements.map((element) => element.getBoundingClientRect());
+
+  return {
+    width: Math.max(container.scrollWidth, ...rects.map((rect) => rect.width)),
+    height: Math.max(container.scrollHeight, ...rects.map((rect) => rect.height)),
+  };
 }
 
 function CenteredState({

@@ -6,7 +6,20 @@ import { FileViewerOverlay } from "./FileViewerOverlay";
 
 const docxPreviewMocks = vi.hoisted(() => ({
   renderAsync: vi.fn(async (_document: ArrayBuffer, bodyContainer: HTMLElement) => {
-    bodyContainer.textContent = "Rendered DOCX preview";
+    const page = document.createElement("section");
+    page.textContent = "Rendered DOCX preview";
+    page.getBoundingClientRect = () => ({
+      width: 720,
+      height: 1000,
+      top: 0,
+      right: 720,
+      bottom: 1000,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    bodyContainer.appendChild(page);
   }),
 }));
 
@@ -15,6 +28,33 @@ vi.mock("docx-preview", () => docxPreviewMocks);
 describe("FileViewerOverlay", () => {
   beforeEach(() => {
     docxPreviewMocks.renderAsync.mockClear();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getMockRect() {
+      if (this.dataset.testid === "docx-preview-viewport") {
+        return {
+          width: 360,
+          height: 640,
+          top: 0,
+          right: 360,
+          bottom: 640,
+          left: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        };
+      }
+
+      return {
+        width: 0,
+        height: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      };
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -75,5 +115,17 @@ describe("FileViewerOverlay", () => {
     );
     expect(screen.queryByRole("button", { name: "Generate Preview" })).toBeNull();
     expect(fetch).not.toHaveBeenCalledWith("/api/files/file-1/preview", { method: "POST" });
+  });
+
+  it("opens DOCX pages fit to the mobile viewport width", async () => {
+    render(<FileViewerOverlay fileId="file-1" isOpen onClose={vi.fn()} />);
+
+    expect(await screen.findByText("Rendered DOCX preview")).toBeTruthy();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("docx-preview-document").style.transform).toBe("scale(0.5)");
+    });
+    expect(screen.getByTestId("docx-preview-frame").style.width).toBe("360px");
+    expect(screen.getByTestId("docx-preview-frame").style.height).toBe("500px");
   });
 });
