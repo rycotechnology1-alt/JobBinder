@@ -3,7 +3,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
-import { getFileTypeForMime } from "@/lib/asset-categories";
+import { validateSupportedUploadType } from "@/lib/asset-categories";
 import { isCompanyScopedObjectKey, uploadR2Object } from "@/lib/r2";
 
 export async function POST(req: NextRequest) {
@@ -16,9 +16,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing object key or contentType" }, { status: 400 });
     }
 
-    if (!getFileTypeForMime(contentType)) {
-      return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
-    }
+    const validation = validateSupportedUploadType({ filename: objectKey, contentType });
+    if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
 
     if (!isCompanyScopedObjectKey(objectKey, user.companyId)) {
       return NextResponse.json({ error: "Object key is outside company storage" }, { status: 403 });

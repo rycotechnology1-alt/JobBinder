@@ -59,4 +59,17 @@ describe("POST /api/files/upload-body", () => {
     expect(await response.json()).toEqual({ error: "Object key is outside company storage" });
     expect(uploadR2Object).not.toHaveBeenCalled();
   });
+
+  it("rejects legacy DOC bodies before writing to R2", async () => {
+    const response = await postUploadBody("doc-data", {
+      "Content-Type": "application/msword",
+      "X-Object-Key": "company-1/legacy.doc",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Legacy .doc files are not supported. Convert the document to .docx before uploading.",
+    });
+    expect(uploadR2Object).not.toHaveBeenCalled();
+  });
 });

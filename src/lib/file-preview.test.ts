@@ -3,7 +3,6 @@ import {
   getDownloadFilename,
   getFilePreviewInfo,
   getOriginalContentUrl,
-  isOfficePreviewType,
 } from "./file-preview";
 
 describe("file preview rules", () => {
@@ -13,6 +12,7 @@ describe("file preview rules", () => {
     expect(getFilePreviewInfo({ filename: "notes.txt", contentType: "text/plain" }).renderMode).toBe("text");
     expect(getFilePreviewInfo({ filename: "materials.csv", contentType: "text/csv" }).renderMode).toBe("csv");
     expect(getFilePreviewInfo({ filename: "costs.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }).renderMode).toBe("spreadsheet");
+    expect(getFilePreviewInfo({ filename: "scope.docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }).renderMode).toBe("docx");
   });
 
   it("falls back to filename extension for legacy records without content type", () => {
@@ -20,17 +20,16 @@ describe("file preview rules", () => {
       contentType: "application/pdf",
       renderMode: "pdf",
     });
-    expect(getFilePreviewInfo({ filename: "legacy.pptx", contentType: null })).toMatchObject({
-      contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      renderMode: "office",
+    expect(getFilePreviewInfo({ filename: "legacy.docx", contentType: null })).toMatchObject({
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      renderMode: "docx",
     });
   });
 
-  it("identifies office files that need cached PDF preview artifacts", () => {
-    expect(isOfficePreviewType("application/vnd.openxmlformats-officedocument.presentationml.presentation")).toBe(true);
-    expect(isOfficePreviewType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).toBe(false);
-    expect(isOfficePreviewType("application/pdf")).toBe(false);
-    expect(getFilePreviewInfo({ filename: "scope.docx", contentType: null }).renderMode).toBe("office");
+  it("treats non-direct Office formats as unsupported instead of queued conversions", () => {
+    expect(getFilePreviewInfo({ filename: "legacy.doc", contentType: null }).renderMode).toBe("unsupported");
+    expect(getFilePreviewInfo({ filename: "legacy.pptx", contentType: null }).renderMode).toBe("unsupported");
+    expect(getFilePreviewInfo({ filename: "legacy.xls", contentType: null }).renderMode).toBe("unsupported");
   });
 
   it("keeps original extensions when display names omit them", () => {

@@ -4,7 +4,7 @@ import imageCompression from "browser-image-compression";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, FileScan, UploadCloud } from "lucide-react";
-import { DEFAULT_ASSET_CATEGORY, getMimeTypeForFilename } from "@/lib/asset-categories";
+import { DEFAULT_ASSET_CATEGORY, getMimeTypeForFilename, validateSupportedUploadType } from "@/lib/asset-categories";
 import { queueOfflineFile } from "@/lib/offline-sync/queue";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -24,7 +24,6 @@ type Props = {
 const ACCEPTED_UPLOAD_TYPES = [
   "image/*",
   "application/pdf",
-  ".doc",
   ".docx",
   ".xls",
   ".xlsx",
@@ -157,9 +156,19 @@ export function AssetUploadModal({
     }
 
     const sourceFile = selectedFile;
+    const initialContentType = sourceFile.type || getMimeTypeForFilename(sourceFile.name) || "";
+    const initialValidation = validateSupportedUploadType({
+      filename: sourceFile.name,
+      contentType: initialContentType,
+    });
+    if (!initialValidation.ok) {
+      setError(initialValidation.error);
+      return;
+    }
+
     setIsUploading(true);
     let preparedFile: Blob = sourceFile;
-    let preparedContentType = sourceFile.type || getMimeTypeForFilename(sourceFile.name) || "";
+    let preparedContentType = initialValidation.contentType;
 
     try {
       if (sourceFile.type.startsWith("image/")) {
@@ -172,10 +181,12 @@ export function AssetUploadModal({
       }
 
       const contentType = preparedFile.type || sourceFile.type || getMimeTypeForFilename(sourceFile.name);
-      if (!contentType) {
-        throw new Error("Unsupported file type.");
-      }
-      const uploadContentType = contentType;
+      const uploadTypeValidation = validateSupportedUploadType({
+        filename: sourceFile.name,
+        contentType,
+      });
+      if (!uploadTypeValidation.ok) throw new Error(uploadTypeValidation.error);
+      const uploadContentType = uploadTypeValidation.contentType;
       preparedContentType = uploadContentType;
 
       async function queueUpload() {
@@ -252,12 +263,16 @@ export function AssetUploadModal({
       if (isNetworkUploadError()) {
         try {
           const fallbackContentType = preparedContentType || sourceFile.type || getMimeTypeForFilename(sourceFile.name);
-          if (!fallbackContentType) throw new Error("Unsupported file type.");
+          const fallbackValidation = validateSupportedUploadType({
+            filename: sourceFile.name,
+            contentType: fallbackContentType,
+          });
+          if (!fallbackValidation.ok) throw new Error(fallbackValidation.error);
           await queueOfflineFile({
             jobId,
             originalName: sourceFile.name,
             name: formData.get("name")?.toString() || "",
-            contentType: fallbackContentType,
+            contentType: fallbackValidation.contentType,
             category,
             blob: preparedFile,
           });
@@ -323,7 +338,7 @@ export function AssetUploadModal({
               {scanUploadMetadata ? "Scanned" : "Selected"}: {selectedUploadFile.name}
             </p>
           )}
-          <p className="mt-2 text-xs text-zinc-500">Images are compressed before upload. PDFs and office documents upload unchanged.</p>
+          <p className="mt-2 text-xs text-zinc-500">Images are compressed before upload. PDFs and supported documents upload unchanged.</p>
         </div>
 
         <div>

@@ -170,4 +170,20 @@ describe("POST /api/files", () => {
       }),
     });
   });
+
+  it("rejects legacy DOC file records with a conversion message", async () => {
+    const response = await postFile({
+      jobId: "job-1",
+      objectKey: "company-1/legacy.doc",
+      originalName: "legacy.doc",
+      contentType: "application/msword",
+      category: "Customer Documents",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Legacy .doc files are not supported. Convert the document to .docx before uploading.",
+    });
+    expect(fileCreate).not.toHaveBeenCalled();
+  });
 });

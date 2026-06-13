@@ -5,7 +5,6 @@ const requireAdminUser = vi.fn();
 const accessErrorResponse = vi.fn();
 const fileFindFirst = vi.fn();
 const fileDelete = vi.fn();
-const previewArtifactFindMany = vi.fn();
 const deleteR2Object = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
@@ -18,9 +17,6 @@ vi.mock("@/lib/prisma", () => ({
     file: {
       findFirst: fileFindFirst,
       delete: fileDelete,
-    },
-    filePreviewArtifact: {
-      findMany: previewArtifactFindMany,
     },
   },
 }));
@@ -44,10 +40,6 @@ describe("DELETE /api/files/[id]", () => {
     requireAdminUser.mockResolvedValue({ id: "admin-1", companyId: "company-1", role: "ADMIN" });
     accessErrorResponse.mockReturnValue(null);
     fileFindFirst.mockResolvedValue({ id: "file-1", url: "company-1/file-1.pdf" });
-    previewArtifactFindMany.mockResolvedValue([
-      { storageKey: "company-1/previews/file-1.pdf" },
-      { storageKey: null },
-    ]);
     fileDelete.mockResolvedValue({ id: "file-1" });
     deleteR2Object.mockResolvedValue(undefined);
   });
@@ -76,7 +68,7 @@ describe("DELETE /api/files/[id]", () => {
     });
     expect(fileDelete).toHaveBeenCalledWith({ where: { id: "file-1" } });
     expect(deleteR2Object).toHaveBeenCalledWith("company-1/file-1.pdf");
-    expect(deleteR2Object).toHaveBeenCalledWith("company-1/previews/file-1.pdf");
+    expect(deleteR2Object).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the database deletion successful when storage cleanup fails", async () => {

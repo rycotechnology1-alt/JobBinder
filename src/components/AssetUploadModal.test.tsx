@@ -78,6 +78,29 @@ describe("AssetUploadModal", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it("rejects legacy DOC uploads with a conversion message before network or offline queue work", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AssetUploadModal isOpen onClose={onClose} jobId="job-1" title="Upload" />);
+
+    const file = new File(["doc"], "legacy.doc", { type: "application/msword" });
+    const fileInput = screen.getByLabelText("Photo or document") as HTMLInputElement;
+    Object.defineProperty(fileInput, "files", {
+      value: [file],
+      configurable: true,
+    });
+    fireEvent.change(fileInput);
+    await user.click(screen.getByRole("button", { name: "Upload" }));
+
+    expect(
+      await screen.findByText("Legacy .doc files are not supported. Convert the document to .docx before uploading."),
+    ).toBeTruthy();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(offlineQueueMocks.queueOfflineFile).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("retries through the same-origin relay when the R2 upload rejects while online", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
 

@@ -8,7 +8,6 @@ import {
   Download,
   FileIcon,
   Loader2,
-  RefreshCw,
   X,
   ZoomIn,
   ZoomOut,
@@ -16,8 +15,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { getPreviewMetadataUrl } from "@/lib/file-preview";
 
-type RenderMode = "image" | "pdf" | "text" | "csv" | "spreadsheet" | "office" | "unsupported";
-type ArtifactStatus = "QUEUED" | "PROCESSING" | "READY" | "FAILED";
+type RenderMode = "image" | "pdf" | "text" | "csv" | "spreadsheet" | "docx" | "unsupported";
 type PdfViewport = {
   width: number;
   height: number;
@@ -51,12 +49,7 @@ type PreviewPayload = {
     sizeBytes: number | null;
     category: string | null;
   };
-  previewArtifact: {
-    id: string;
-    status: ArtifactStatus;
-    previewUrl: string | null;
-    lastError: string | null;
-  } | null;
+  previewArtifact: null;
 };
 
 type Props = {
@@ -76,7 +69,6 @@ function formatBytes(sizeBytes: number | null) {
 export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: Props) {
   const [payload, setPayload] = useState<PreviewPayload | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadPreview = useCallback(async () => {
@@ -104,23 +96,6 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
       document.body.style.overflow = "unset";
     };
   }, [isOpen, loadPreview]);
-
-  async function generatePreview() {
-    if (!fileId) return;
-    setIsGenerating(true);
-    setError(null);
-
-    try {
-      const response = await fetch(getPreviewMetadataUrl(fileId), { method: "POST" });
-      const nextPayload = await response.json();
-      if (!response.ok) throw new Error(nextPayload.error || "Could not generate preview.");
-      await loadPreview();
-    } catch (previewError) {
-      setError(previewError instanceof Error ? previewError.message : "Could not generate preview.");
-    } finally {
-      setIsGenerating(false);
-    }
-  }
 
   if (!isOpen || !fileId || typeof document === "undefined") return null;
 
@@ -173,10 +148,6 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
           ) : file ? (
             <PreviewSurface
               file={file}
-              artifact={payload.previewArtifact}
-              isGenerating={isGenerating}
-              onGenerate={generatePreview}
-              onRetry={generatePreview}
             />
           ) : null}
         </main>
@@ -188,48 +159,16 @@ export function FileViewerOverlay({ fileId, isOpen, onClose, initialFilename }: 
 
 function PreviewSurface({
   file,
-  artifact,
-  isGenerating,
-  onGenerate,
-  onRetry,
 }: {
   file: PreviewPayload["file"];
-  artifact: PreviewPayload["previewArtifact"];
-  isGenerating: boolean;
-  onGenerate: () => void;
-  onRetry: () => void;
 }) {
   if (file.renderMode === "image") return <ImagePreview src={file.originalUrl} alt={file.filename} />;
   if (file.renderMode === "pdf") return <PdfPreview src={file.originalUrl} />;
   if (file.renderMode === "text") return <TextPreview src={file.originalUrl} />;
   if (file.renderMode === "csv") return <CsvPreview src={file.originalUrl} />;
+  if (file.renderMode === "docx") return <DocxPreview src={file.originalUrl} />;
   if (file.renderMode === "spreadsheet" && file.spreadsheetPreviewUrl) {
     return <SpreadsheetPreview src={file.spreadsheetPreviewUrl} />;
-  }
-
-  if (file.renderMode === "office") {
-    if (artifact?.status === "READY" && artifact.previewUrl) {
-      return <PdfPreview src={artifact.previewUrl} />;
-    }
-
-    const isWaiting = artifact?.status === "QUEUED" || artifact?.status === "PROCESSING";
-    return (
-      <CenteredState
-        icon={isWaiting ? <Loader2 className="animate-spin" size={24} /> : <FileIcon size={24} />}
-        title={isWaiting ? "Preview queued" : "Preview not generated"}
-        message={
-          artifact?.status === "FAILED"
-            ? artifact.lastError || "The preview worker could not generate this preview."
-            : "Generate a private PDF preview to read this Office file inside Job Binder."
-        }
-        action={(
-          <Button type="button" onClick={artifact?.status === "FAILED" ? onRetry : onGenerate} disabled={isGenerating} className="gap-2">
-            {isGenerating ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-            {artifact?.status === "FAILED" ? "Retry Preview" : "Generate Preview"}
-          </Button>
-        )}
-      />
-    );
   }
 
   return (
@@ -238,6 +177,68 @@ function PreviewSurface({
       title="Preview unavailable"
       message="This file type cannot be previewed in the app yet. Download the original file to open it."
     />
+  );
+}
+
+function DocxPreview({ src }: { src: string }) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const styleRef = useRef<HTMLDivElement | null>(null);
+  const [status, setStatus] = useState("Loading DOCX...");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCanceled = false;
+    const bodyContainer = bodyRef.current;
+    const styleContainer = styleRef.current;
+
+    async function loadDocx() {
+      setError(null);
+      setStatus("Loading DOCX...");
+
+      const response = await fetch(src);
+      if (!response.ok) throw new Error("Could not load DOCX.");
+      const bytes = await response.arrayBuffer();
+      if (!bodyContainer || !styleContainer || isCanceled) return;
+
+      bodyContainer.replaceChildren();
+      styleContainer.replaceChildren();
+      setStatus("Rendering DOCX...");
+
+      const { renderAsync } = await import("docx-preview");
+      await renderAsync(bytes, bodyContainer, styleContainer, {
+        breakPages: true,
+        renderHeaders: true,
+        renderFooters: true,
+        renderFootnotes: true,
+        renderEndnotes: true,
+        renderComments: false,
+      });
+
+      if (!isCanceled) setStatus("");
+    }
+
+    loadDocx().catch((docxError) => {
+      if (!isCanceled) {
+        setStatus("");
+        setError(docxError instanceof Error ? docxError.message : "Could not render DOCX.");
+      }
+    });
+
+    return () => {
+      isCanceled = true;
+      bodyContainer?.replaceChildren();
+      styleContainer?.replaceChildren();
+    };
+  }, [src]);
+
+  if (error) return <CenteredState icon={<AlertCircle size={24} />} title="Could not open DOCX" message={error} />;
+
+  return (
+    <div className="h-full overflow-auto bg-zinc-800 p-4 sm:p-6">
+      {status && <p className="mb-3 text-center text-sm text-zinc-400">{status}</p>}
+      <div ref={styleRef} />
+      <div ref={bodyRef} className="mx-auto max-w-fit text-zinc-950" />
+    </div>
   );
 }
 

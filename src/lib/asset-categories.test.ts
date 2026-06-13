@@ -44,6 +44,7 @@ describe("asset category and file rules", () => {
     expect(getFileTypeForMime("image/jpeg")).toBe("PHOTO");
     expect(getFileTypeForMime("image/png")).toBe("PHOTO");
     expect(getFileTypeForMime("application/pdf")).toBe("DOCUMENT");
+    expect(getFileTypeForMime("application/msword")).toBeNull();
     expect(getFileTypeForMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("DOCUMENT");
     expect(getFileTypeForMime("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).toBe("DOCUMENT");
     expect(getFileTypeForMime("application/vnd.openxmlformats-officedocument.presentationml.presentation")).toBe("DOCUMENT");
@@ -55,6 +56,7 @@ describe("asset category and file rules", () => {
   it("infers supported mime types from common file extensions", () => {
     expect(getMimeTypeForFilename("photo.JPG")).toBe("image/jpeg");
     expect(getMimeTypeForFilename("permit.pdf")).toBe("application/pdf");
+    expect(getMimeTypeForFilename("legacy.doc")).toBe("application/msword");
     expect(getMimeTypeForFilename("scope.docx")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     expect(getMimeTypeForFilename("costs.xlsx")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     expect(getMimeTypeForFilename("deck.pptx")).toBe("application/vnd.openxmlformats-officedocument.presentationml.presentation");
@@ -93,6 +95,49 @@ describe("asset category and file rules", () => {
     ).toEqual({
       ok: false,
       error: "Missing originalName",
+    });
+  });
+
+  it("rejects legacy DOC uploads with a conversion message while allowing DOCX", () => {
+    const legacyDocMessage = "Legacy .doc files are not supported. Convert the document to .docx before uploading.";
+
+    expect(
+      validateFileUploadInput({
+        originalName: "legacy.doc",
+        objectKey: "company/legacy.doc",
+        contentType: "application/msword",
+        category: "Customer Documents",
+      }),
+    ).toEqual({
+      ok: false,
+      error: legacyDocMessage,
+    });
+
+    expect(
+      validateFileUploadInput({
+        originalName: "legacy.doc",
+        objectKey: "company/legacy.doc",
+        contentType: "application/octet-stream",
+        category: "Customer Documents",
+      }),
+    ).toEqual({
+      ok: false,
+      error: legacyDocMessage,
+    });
+
+    expect(
+      validateFileUploadInput({
+        originalName: "scope.docx",
+        objectKey: "company/scope.docx",
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        category: "Customer Documents",
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: {
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        type: "DOCUMENT",
+      },
     });
   });
 });

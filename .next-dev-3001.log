@@ -6,5 +6,28 @@
 - Local:         http://localhost:3001
 - Network:       http://10.0.0.243:3001
 - Environments: .env
-✓ Ready in 260ms
+✓ Ready in 418ms
+Creating turbopack project { dir: 'C:\\Repos\\Job-Binder', testMode: true }
 
+ GET / 307 in 336ms (next.js: 127ms, application-code: 208ms)
+ GET /sign-in 200 in 78ms (next.js: 24ms, application-code: 54ms)
+ GET / 200 in 3.7s (next.js: 4ms, application-code: 3.7s)
+ GET /manifest.webmanifest 200 in 53ms (next.js: 45ms, application-code: 8ms)
+ GET /apple-icon 200 in 242ms (next.js: 18ms, application-code: 224ms)
+ GET /jobs/cmpognkhz0003z4685qqieatj 200 in 723ms (next.js: 274ms, application-code: 450ms)
+ GET /manifest.webmanifest 200 in 5ms (next.js: 2ms, application-code: 3ms)
+ GET /apple-icon 200 in 10ms (next.js: 1547µs, application-code: 8ms)
+ GET /api/files/cmpogqesv0003ykt4caenmu7l/content 200 in 1293ms (next.js: 734ms, application-code: 559ms)
+ GET /api/files/cmpogs2yk0005z468nku4ufke/preview 200 in 714ms (next.js: 478ms, application-code: 236ms)
+ GET /api/files/cmpogs2yk0005z468nku4ufke/content 200 in 456ms (next.js: 5ms, application-code: 451ms)
+ GET /api/files/cmpogs2yk0005z468nku4ufke/content 200 in 288ms (next.js: 1370µs, application-code: 287ms)
+ GET /api/files/cmpogtfy80005ykt4sdwgx683/preview 200 in 282ms (next.js: 5ms, application-code: 277ms)
+ POST /api/files/cmpogtfy80005ykt4sdwgx683/preview 202 in 306ms (next.js: 5ms, application-code: 300ms)
+ GET /api/files/cmpogtfy80005ykt4sdwgx683/preview 200 in 214ms (next.js: 1448µs, application-code: 212ms)
+ GET /api/files/cmpogpy4k0001ykt4qufem1s7/preview 200 in 222ms (next.js: 5ms, application-code: 217ms)
+ GET /api/files/cmpogpy4k0001ykt4qufem1s7/content 200 in 367ms (next.js: 6ms, application-code: 361ms)
+ GET /api/files/cmpogpy4k0001ykt4qufem1s7/content 200 in 364ms (next.js: 1238µs, application-code: 362ms)
+ GET /api/files/cmpogrfsq000138b9gfftubhz/preview 200 in 248ms (next.js: 5ms, application-code: 243ms)
+ GET /api/files/cmpogrfsq000138b9gfftubhz/spreadsheet-preview 200 in 1173ms (next.js: 688ms, application-code: 485ms)
+ GET /api/files/cmpogrfsq000138b9gfftubhz/spreadsheet-preview 200 in 294ms (next.js: 5ms, application-code: 289ms)
+[?25h

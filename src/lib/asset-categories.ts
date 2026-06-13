@@ -27,7 +27,6 @@ export const DEFAULT_ASSET_CATEGORY: AssetCategory = "Misc";
 
 const DOCUMENT_MIME_TYPES = new Set([
   "application/pdf",
-  "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -53,6 +52,8 @@ const EXTENSION_MIME_TYPES: Record<string, string> = {
   csv: "text/csv",
 };
 
+export const LEGACY_DOC_UPLOAD_ERROR = "Legacy .doc files are not supported. Convert the document to .docx before uploading.";
+
 export function normalizeAssetCategory(category: unknown): AssetCategory {
   if (typeof category !== "string") return DEFAULT_ASSET_CATEGORY;
 
@@ -75,6 +76,32 @@ export function getMimeTypeForFilename(filename: string) {
   if (!extension || extension === filename.toLowerCase()) return null;
 
   return EXTENSION_MIME_TYPES[extension] ?? null;
+}
+
+function hasLegacyDocExtension(filename: unknown) {
+  return typeof filename === "string" && /\.doc$/i.test(filename.trim());
+}
+
+function normalizeUploadContentType(contentType: unknown) {
+  return typeof contentType === "string" ? contentType.split(";")[0]?.trim().toLowerCase() || "" : "";
+}
+
+export function validateSupportedUploadType(input: {
+  filename?: unknown;
+  contentType?: unknown;
+}): { ok: true; contentType: string; type: FileType } | { ok: false; error: string } {
+  const contentType = normalizeUploadContentType(input.contentType);
+
+  if (hasLegacyDocExtension(input.filename) || contentType === "application/msword") {
+    return { ok: false, error: LEGACY_DOC_UPLOAD_ERROR };
+  }
+
+  if (!contentType) return { ok: false, error: "Missing contentType" };
+
+  const type = getFileTypeForMime(contentType);
+  if (!type) return { ok: false, error: "Unsupported file type" };
+
+  return { ok: true, contentType, type };
 }
 
 type UploadInput = {
@@ -103,11 +130,11 @@ export function validateFileUploadInput(
   const objectKey = typeof input.objectKey === "string" ? input.objectKey.trim() : "";
   if (!objectKey) return { ok: false, error: "Missing objectKey" };
 
-  const contentType = typeof input.contentType === "string" ? input.contentType.trim().toLowerCase() : "";
-  if (!contentType) return { ok: false, error: "Missing contentType" };
-
-  const type = getFileTypeForMime(contentType);
-  if (!type) return { ok: false, error: "Unsupported file type" };
+  const uploadTypeValidation = validateSupportedUploadType({
+    filename: originalName,
+    contentType: input.contentType,
+  });
+  if (!uploadTypeValidation.ok) return uploadTypeValidation;
 
   const sizeBytes = typeof input.sizeBytes === "number" && Number.isFinite(input.sizeBytes) && input.sizeBytes >= 0
     ? Math.round(input.sizeBytes)
@@ -118,10 +145,10 @@ export function validateFileUploadInput(
     value: {
       originalName,
       objectKey,
-      contentType,
+      contentType: uploadTypeValidation.contentType,
       sizeBytes,
       category: normalizeAssetCategory(input.category),
-      type,
+      type: uploadTypeValidation.type,
     },
   };
 }

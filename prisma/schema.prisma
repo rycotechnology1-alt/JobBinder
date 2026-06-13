@@ -57,7 +57,6 @@ model User {
   jobsCreated    Job[]
   notes          Note[]
   files          File[]
-  previewRequests FilePreviewArtifact[]
   tasksCreated   Task[]
   tasksAssigned  Task[]   @relation("AssignedTasks")
   exports        Export[]
@@ -200,17 +199,6 @@ enum FileType {
   DOCUMENT
 }
 
-enum FilePreviewKind {
-  OFFICE_PDF
-}
-
-enum FilePreviewStatus {
-  QUEUED
-  PROCESSING
-  READY
-  FAILED
-}
-
 model File {
   id                   String   @id @default(cuid())
   companyId            String
@@ -240,27 +228,8 @@ model File {
   uploader             User     @relation(fields: [uploaderId], references: [id])
   note                 Note?    @relation("NoteFiles", fields: [noteId], references: [id])
   task                 Task?    @relation("TaskFiles", fields: [taskId], references: [id])
-  previewArtifacts     FilePreviewArtifact[]
 
   @@unique([companyId, clientMutationId])
-}
-
-model FilePreviewArtifact {
-  id             String            @id @default(cuid())
-  fileId         String
-  kind           FilePreviewKind
-  status         FilePreviewStatus @default(QUEUED)
-  storageKey     String?
-  contentType    String
-  requestedById  String?
-  lastError      String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-
-  file           File              @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  requestedBy    User?             @relation(fields: [requestedById], references: [id])
-
-  @@unique([fileId, kind])
 }
 
 // ---------------------------------------------------------------------------
