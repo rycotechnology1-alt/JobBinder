@@ -7,6 +7,7 @@ const jobFindFirst = vi.fn();
 const fileFindFirst = vi.fn();
 const fileUpdate = vi.fn();
 const fileCreate = vi.fn();
+const noteFindFirst = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
   requireCompanyUser,
@@ -22,6 +23,9 @@ vi.mock("@/lib/prisma", () => ({
       create: fileCreate,
       findFirst: fileFindFirst,
       update: fileUpdate,
+    },
+    note: {
+      findFirst: noteFindFirst,
     },
   },
 }));
@@ -101,6 +105,7 @@ describe("POST /api/files", () => {
     jobFindFirst.mockResolvedValue({ id: "job-1" });
     fileFindFirst.mockResolvedValue(null);
     fileCreate.mockResolvedValue({ id: "file-created", clientMutationId: "offline-1" });
+    noteFindFirst.mockResolvedValue({ id: "report-1", jobId: "job-1" });
   });
 
   it("returns an existing file for a repeated offline clientMutationId", async () => {
@@ -169,6 +174,46 @@ describe("POST /api/files", () => {
         sizeBytes: 456789,
       }),
     });
+  });
+
+  it("links uploads to a company-scoped daily report note", async () => {
+    const response = await postFile({
+      jobId: "job-1",
+      noteId: "report-1",
+      objectKey: "company-1/photo.jpg",
+      originalName: "photo.jpg",
+      contentType: "image/jpeg",
+      category: "Misc",
+    });
+
+    expect(response.status).toBe(201);
+    expect(noteFindFirst).toHaveBeenCalledWith({
+      where: { id: "report-1", companyId: "company-1", jobId: "job-1" },
+      select: { id: true, jobId: true },
+    });
+    expect(fileCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        jobId: "job-1",
+        noteId: "report-1",
+      }),
+    });
+  });
+
+  it("rejects a noteId that is not on the same company job", async () => {
+    noteFindFirst.mockResolvedValueOnce(null);
+
+    const response = await postFile({
+      jobId: "job-1",
+      noteId: "other-report",
+      objectKey: "company-1/photo.jpg",
+      originalName: "photo.jpg",
+      contentType: "image/jpeg",
+      category: "Misc",
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Daily report not found" });
+    expect(fileCreate).not.toHaveBeenCalled();
   });
 
   it("rejects legacy DOC file records with a conversion message", async () => {

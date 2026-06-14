@@ -36,6 +36,8 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
     content: note.content,
     category: note.category,
     statusTag: note.statusTag,
+    reportDate: note.reportDate?.toISOString() ?? null,
+    materialsUsed: note.materialsUsed,
     createdAt: note.createdAt.toISOString(),
     authorName: note.author.name ?? note.author.email ?? "User",
   }));
@@ -46,6 +48,7 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
     originalName: file.originalName,
     name: file.name,
     category: file.category,
+    noteId: file.noteId,
     createdAt: file.createdAt.toISOString(),
   }));
 

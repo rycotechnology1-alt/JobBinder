@@ -4,6 +4,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearOfflineQueueForTests,
+  enqueueOfflineDailyReport,
   enqueueOfflineFile,
   enqueueOfflineMarkup,
   enqueueOfflineNote,
@@ -206,6 +207,101 @@ describe("offline sync runner", () => {
     expect(fetchImpl).toHaveBeenCalledWith(
       "/api/files/file-1/markup",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ mutations }) }),
+    );
+    expect(await listOfflineQueue()).toEqual([]);
+  });
+
+  it("syncs a queued daily report before uploading and linking its attachments", async () => {
+    const queued = await enqueueOfflineDailyReport({
+      jobId: "job-1",
+      reportDate: "2026-06-14",
+      workPerformed: "Installed conduit.",
+      materialsUsed: "2 EMT sticks",
+      attachments: [
+        {
+          originalName: "photo-1.jpg",
+          name: "Panel photo",
+          contentType: "image/jpeg",
+          blob: new Blob(["photo-1"], { type: "image/jpeg" }),
+        },
+        {
+          originalName: "receipt.pdf",
+          name: "",
+          contentType: "application/pdf",
+          blob: new Blob(["receipt"], { type: "application/pdf" }),
+        },
+      ],
+    });
+
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "report-1" }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploadUrl: "https://r2.test/photo", objectKey: "company/photo.jpg" }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "file-1" }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ uploadUrl: "https://r2.test/receipt", objectKey: "company/receipt.pdf" }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "file-2" }) });
+
+    await syncNextQueuedItem({ fetchImpl });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "/api/daily-reports",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          jobId: "job-1",
+          reportDate: "2026-06-14",
+          workPerformed: "Installed conduit.",
+          materialsUsed: "2 EMT sticks",
+          clientMutationId: queued.clientMutationId,
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      4,
+      "/api/files",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          jobId: "job-1",
+          noteId: "report-1",
+          objectKey: "company/photo.jpg",
+          originalName: "photo-1.jpg",
+          name: "Panel photo",
+          contentType: "image/jpeg",
+          sizeBytes: queued.payload.attachments[0].blob.size,
+          category: "Misc",
+          createdAt: queued.createdAt,
+          clientMutationId: `${queued.clientMutationId}:file:0`,
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      7,
+      "/api/files",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          jobId: "job-1",
+          noteId: "report-1",
+          objectKey: "company/receipt.pdf",
+          originalName: "receipt.pdf",
+          name: "",
+          contentType: "application/pdf",
+          sizeBytes: queued.payload.attachments[1].blob.size,
+          category: "Misc",
+          createdAt: queued.createdAt,
+          clientMutationId: `${queued.clientMutationId}:file:1`,
+        }),
+      }),
     );
     expect(await listOfflineQueue()).toEqual([]);
   });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobActions } from "./JobActions";
@@ -10,6 +10,7 @@ const push = vi.fn();
 const offlineQueueMocks = vi.hoisted(() => ({
   queueOfflineNote: vi.fn(),
   queueOfflineTask: vi.fn(),
+  queueOfflineDailyReport: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -26,6 +27,7 @@ vi.mock("@/components/AssetUploadModal", () => ({
 vi.mock("@/lib/offline-sync/queue", () => ({
   queueOfflineNote: offlineQueueMocks.queueOfflineNote,
   queueOfflineTask: offlineQueueMocks.queueOfflineTask,
+  queueOfflineDailyReport: offlineQueueMocks.queueOfflineDailyReport,
 }));
 
 describe("JobActions", () => {
@@ -34,8 +36,10 @@ describe("JobActions", () => {
     push.mockClear();
     offlineQueueMocks.queueOfflineNote.mockReset();
     offlineQueueMocks.queueOfflineTask.mockReset();
+    offlineQueueMocks.queueOfflineDailyReport.mockReset();
     offlineQueueMocks.queueOfflineNote.mockResolvedValue({ id: "queued-note" });
     offlineQueueMocks.queueOfflineTask.mockResolvedValue({ id: "queued-task" });
+    offlineQueueMocks.queueOfflineDailyReport.mockResolvedValue({ id: "queued-report" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -160,22 +164,50 @@ describe("JobActions", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("queues notes and progress logs while offline", async () => {
+  it("queues daily reports with multiple attachments while offline", async () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
-    await user.click(screen.getByRole("button", { name: /Log Progress/i }));
+    await user.click(screen.getAllByRole("button", { name: /Daily Report/i })[0]);
+    expect(screen.queryByLabelText("Category")).toBeNull();
+
+    await user.clear(screen.getByLabelText("Report Date *"));
+    await user.type(screen.getByLabelText("Report Date *"), "2026-06-14");
     await user.type(screen.getByLabelText("Work Performed *"), "Installed conduit.");
+    await user.type(screen.getByLabelText("Materials Used"), "2 EMT sticks");
+
+    const fileInput = screen.getByLabelText("Attach files or photos") as HTMLInputElement;
+    const firstFile = new File(["photo-1"], "photo-1.jpg", { type: "image/jpeg" });
+    const secondFile = new File(["receipt"], "receipt.pdf", { type: "application/pdf" });
+    Object.defineProperty(fileInput, "files", {
+      value: [firstFile, secondFile],
+      configurable: true,
+    });
+    fireEvent.change(fileInput);
+
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(offlineQueueMocks.queueOfflineNote).toHaveBeenCalledWith({
+      expect(offlineQueueMocks.queueOfflineDailyReport).toHaveBeenCalledWith({
         jobId: "job-1",
-        type: "PROGRESS",
-        content: "Installed conduit.",
-        category: "Misc",
-        statusTag: "",
+        reportDate: "2026-06-14",
+        workPerformed: "Installed conduit.",
+        materialsUsed: "2 EMT sticks",
+        attachments: [
+          {
+            originalName: "photo-1.jpg",
+            name: "",
+            contentType: "image/jpeg",
+            blob: firstFile,
+          },
+          {
+            originalName: "receipt.pdf",
+            name: "",
+            contentType: "application/pdf",
+            blob: secondFile,
+          },
+        ],
       });
     });
     expect(fetch).not.toHaveBeenCalled();

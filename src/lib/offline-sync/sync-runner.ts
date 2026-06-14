@@ -3,7 +3,7 @@ import {
   removeOfflineQueueItem,
   updateOfflineQueueItem,
 } from "./queue";
-import type { OfflineFileQueueItem, OfflineQueueItem } from "./types";
+import type { OfflineDailyReportQueueItem, OfflineFileQueueItem, OfflineQueueItem } from "./types";
 
 type FetchLike = typeof fetch;
 
@@ -98,6 +98,50 @@ async function syncFile(fetchImpl: FetchLike, item: OfflineFileQueueItem) {
   });
 }
 
+async function syncDailyReport(fetchImpl: FetchLike, item: OfflineDailyReportQueueItem) {
+  const report = await postJson(fetchImpl, "/api/daily-reports", {
+    jobId: item.jobId,
+    reportDate: item.payload.reportDate,
+    workPerformed: item.payload.workPerformed,
+    materialsUsed: item.payload.materialsUsed,
+    clientMutationId: item.clientMutationId,
+  }) as { id?: string };
+
+  if (!report.id) {
+    throw new Error("Daily report sync did not return a report id.");
+  }
+
+  for (const [index, attachment] of item.payload.attachments.entries()) {
+    const uploadUrlPayload = await postJson(fetchImpl, "/api/files/upload-url", {
+      filename: attachment.originalName,
+      contentType: attachment.contentType,
+    });
+
+    const r2Response = await fetchImpl(uploadUrlPayload.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": attachment.contentType },
+      body: attachment.blob,
+    });
+
+    if (!r2Response.ok) {
+      throw new Error("Cloudflare R2 upload failed.");
+    }
+
+    await postJson(fetchImpl, "/api/files", {
+      jobId: item.jobId,
+      noteId: report.id,
+      objectKey: uploadUrlPayload.objectKey,
+      originalName: attachment.originalName,
+      name: attachment.name,
+      contentType: attachment.contentType,
+      sizeBytes: attachment.blob.size,
+      category: "Misc",
+      createdAt: item.createdAt,
+      clientMutationId: `${item.clientMutationId}:file:${index}`,
+    });
+  }
+}
+
 async function syncMarkup(fetchImpl: FetchLike, item: OfflineQueueItem) {
   if (item.kind !== "MARKUP_SAVE") return;
 
@@ -109,6 +153,7 @@ async function syncMarkup(fetchImpl: FetchLike, item: OfflineQueueItem) {
 async function syncItem(fetchImpl: FetchLike, item: OfflineQueueItem) {
   if (item.kind === "NOTE_CREATE") return syncNote(fetchImpl, item);
   if (item.kind === "TASK_CREATE") return syncTask(fetchImpl, item);
+  if (item.kind === "DAILY_REPORT_CREATE") return syncDailyReport(fetchImpl, item);
   if (item.kind === "MARKUP_SAVE") return syncMarkup(fetchImpl, item);
   return syncFile(fetchImpl, item);
 }

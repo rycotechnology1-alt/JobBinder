@@ -40,6 +40,7 @@ const files = [
     originalName: "permit.pdf",
     name: "Permit Packet",
     category: "Permits",
+    noteId: null,
     createdAt: "2026-05-09T12:00:00.000Z",
   },
   {
@@ -48,7 +49,34 @@ const files = [
     originalName: "before.jpg",
     name: null,
     category: "Before",
+    noteId: null,
     createdAt: "2026-05-08T12:00:00.000Z",
+  },
+];
+
+const dailyReports = [
+  {
+    id: "report-1",
+    type: "DAILY_REPORT" as const,
+    content: "Installed conduit and cleaned work area.",
+    category: null,
+    statusTag: null,
+    reportDate: "2026-06-14T00:00:00.000Z",
+    materialsUsed: "2 EMT sticks",
+    createdAt: "2026-06-14T16:00:00.000Z",
+    authorName: "Foreman",
+  },
+];
+
+const dailyReportFiles = [
+  {
+    id: "file-report-1",
+    type: "PHOTO" as const,
+    originalName: "report-photo.jpg",
+    name: null,
+    category: "Misc",
+    noteId: "report-1",
+    createdAt: "2026-06-14T16:05:00.000Z",
   },
 ];
 
@@ -215,5 +243,18 @@ describe("JobFolderTabs", () => {
     expect(screen.getByRole("button", { name: "Tasks (1)" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Tasks (1)" }));
     expect(screen.getByText("Call inspector")).toBeTruthy();
+  });
+
+  it("shows daily reports with report metadata and linked attachments", async () => {
+    const user = userEvent.setup();
+    render(<JobFolderTabs notes={dailyReports} files={dailyReportFiles} tasks={[]} isAdmin={false} />);
+
+    expect(screen.getByRole("button", { name: "Daily Reports (1)" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Daily Reports (1)" }));
+
+    expect(screen.getByText("Installed conduit and cleaned work area.")).toBeTruthy();
+    expect(screen.getByText("2 EMT sticks")).toBeTruthy();
+    expect(screen.getByText(/by Foreman/)).toBeTruthy();
+    expect(screen.getByText("report-photo.jpg")).toBeTruthy();
   });
 });

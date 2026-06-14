@@ -1,11 +1,17 @@
 "use client";
 
-import imageCompression from "browser-image-compression";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, FileScan, UploadCloud } from "lucide-react";
-import { DEFAULT_ASSET_CATEGORY, getMimeTypeForFilename, validateSupportedUploadType } from "@/lib/asset-categories";
+import { DEFAULT_ASSET_CATEGORY } from "@/lib/asset-categories";
 import { queueOfflineFile } from "@/lib/offline-sync/queue";
+import {
+  ACCEPTED_UPLOAD_TYPES,
+  isNetworkUploadError,
+  isOffline,
+  prepareClientUploadFile,
+  uploadFileRecord,
+} from "@/lib/uploads/client-upload";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -20,75 +26,6 @@ type Props = {
   jobId?: string;
   title?: string;
 };
-
-const ACCEPTED_UPLOAD_TYPES = [
-  "image/*",
-  "application/pdf",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  "text/plain",
-  "text/csv",
-  ".txt",
-  ".csv",
-].join(",");
-
-function isOffline() {
-  return typeof navigator !== "undefined" && !navigator.onLine;
-}
-
-function isNetworkUploadError() {
-  // Only fall back to the offline queue when the browser reports it is
-  // actually offline. A `TypeError` from `fetch` can also mean CORS, TLS, or
-  // a misconfigured server — those should surface to the user rather than
-  // be silently queued for retry (which would just fail the same way).
-  return isOffline();
-}
-
-async function uploadPreparedFile(input: {
-  uploadUrl: string;
-  objectKey: string;
-  contentType: string;
-  body: Blob;
-}) {
-  try {
-    const r2Response = await fetch(input.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": input.contentType },
-      body: input.body,
-    });
-
-    if (!r2Response.ok) {
-      throw new Error("Cloudflare R2 upload failed.");
-    }
-  } catch (error) {
-    if (!(error instanceof TypeError) || isOffline()) {
-      throw error;
-    }
-
-    const relayResponse = await fetch("/api/files/upload-body", {
-      method: "POST",
-      headers: {
-        "Content-Type": input.contentType,
-        "X-Object-Key": input.objectKey,
-      },
-      body: input.body,
-    });
-
-    if (!relayResponse.ok) {
-      let message = "Cloudflare R2 upload failed.";
-      try {
-        const payload = await relayResponse.json();
-        if (typeof payload.error === "string") message = payload.error;
-      } catch {
-        // Keep the generic storage error when the relay cannot return JSON.
-      }
-      throw new Error(message);
-    }
-  }
-}
 
 type ScanUploadMetadata = {
   sourceType: "scan";
@@ -116,6 +53,14 @@ export function AssetUploadModal({
   function selectUploadFile(file: File | null) {
     setSelectedUploadFile(file);
     setScanUploadMetadata(null);
+  }
+
+  function resetAndClose(refresh = false) {
+    formRef.current?.reset();
+    setSelectedUploadFile(null);
+    setScanUploadMetadata(null);
+    onClose();
+    if (refresh) router.refresh();
   }
 
   async function handleScanDocument() {
@@ -156,38 +101,10 @@ export function AssetUploadModal({
     }
 
     const sourceFile = selectedFile;
-    const initialContentType = sourceFile.type || getMimeTypeForFilename(sourceFile.name) || "";
-    const initialValidation = validateSupportedUploadType({
-      filename: sourceFile.name,
-      contentType: initialContentType,
-    });
-    if (!initialValidation.ok) {
-      setError(initialValidation.error);
-      return;
-    }
-
     setIsUploading(true);
-    let preparedFile: Blob = sourceFile;
-    let preparedContentType = initialValidation.contentType;
 
     try {
-      if (sourceFile.type.startsWith("image/")) {
-        setStatus("Compressing image...");
-        preparedFile = await imageCompression(sourceFile, {
-          maxSizeMB: 1.2,
-          maxWidthOrHeight: 1920,
-          useWebWorker: true,
-        });
-      }
-
-      const contentType = preparedFile.type || sourceFile.type || getMimeTypeForFilename(sourceFile.name);
-      const uploadTypeValidation = validateSupportedUploadType({
-        filename: sourceFile.name,
-        contentType,
-      });
-      if (!uploadTypeValidation.ok) throw new Error(uploadTypeValidation.error);
-      const uploadContentType = uploadTypeValidation.contentType;
-      preparedContentType = uploadContentType;
+      const prepared = await prepareClientUploadFile(sourceFile, setStatus);
 
       async function queueUpload() {
         setStatus("Saving offline...");
@@ -195,91 +112,42 @@ export function AssetUploadModal({
           jobId,
           originalName: sourceFile.name,
           name: formData.get("name")?.toString() || "",
-          contentType: uploadContentType,
+          contentType: prepared.contentType,
           category,
-          blob: preparedFile,
+          blob: prepared.body,
         });
       }
 
       if (isOffline()) {
         await queueUpload();
-        formRef.current?.reset();
-        setSelectedUploadFile(null);
-        setScanUploadMetadata(null);
-        onClose();
+        resetAndClose();
         return;
       }
 
-      setStatus("Preparing secure upload...");
-      const uploadUrlResponse = await fetch("/api/files/upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: sourceFile.name,
-          contentType: uploadContentType,
-        }),
+      await uploadFileRecord({
+        jobId,
+        originalName: sourceFile.name,
+        name: formData.get("name")?.toString() || "",
+        category,
+        prepared,
+        metadata: scanUploadMetadata ?? undefined,
+        onStatus: setStatus,
       });
 
-      const uploadUrlPayload = await uploadUrlResponse.json();
-      if (!uploadUrlResponse.ok) {
-        throw new Error(uploadUrlPayload.error || "Could not create upload URL.");
-      }
-
-      setStatus("Uploading to secure storage...");
-      await uploadPreparedFile({
-        uploadUrl: uploadUrlPayload.uploadUrl,
-        objectKey: uploadUrlPayload.objectKey,
-        contentType: uploadContentType,
-        body: preparedFile,
-      });
-
-      setStatus("Saving to job folder...");
-      const fileResponse = await fetch("/api/files", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobId,
-          objectKey: uploadUrlPayload.objectKey,
-          originalName: sourceFile.name,
-          name: formData.get("name"),
-          contentType: uploadContentType,
-          sizeBytes: preparedFile.size,
-          category,
-          ...(scanUploadMetadata ?? {}),
-        }),
-      });
-
-      const filePayload = await fileResponse.json();
-      if (!fileResponse.ok) {
-        throw new Error(filePayload.error || "Could not save file record.");
-      }
-
-      formRef.current?.reset();
-      setSelectedUploadFile(null);
-      setScanUploadMetadata(null);
-      onClose();
-      router.refresh();
+      resetAndClose(true);
     } catch (uploadError) {
       if (isNetworkUploadError()) {
         try {
-          const fallbackContentType = preparedContentType || sourceFile.type || getMimeTypeForFilename(sourceFile.name);
-          const fallbackValidation = validateSupportedUploadType({
-            filename: sourceFile.name,
-            contentType: fallbackContentType,
-          });
-          if (!fallbackValidation.ok) throw new Error(fallbackValidation.error);
+          const prepared = await prepareClientUploadFile(sourceFile, setStatus);
           await queueOfflineFile({
             jobId,
             originalName: sourceFile.name,
             name: formData.get("name")?.toString() || "",
-            contentType: fallbackValidation.contentType,
+            contentType: prepared.contentType,
             category,
-            blob: preparedFile,
+            blob: prepared.body,
           });
-          formRef.current?.reset();
-          setSelectedUploadFile(null);
-          setScanUploadMetadata(null);
-          onClose();
+          resetAndClose();
         } catch (queueError) {
           setError(queueError instanceof Error ? queueError.message : "Upload failed.");
         }

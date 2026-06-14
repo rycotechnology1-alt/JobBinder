@@ -165,6 +165,7 @@ model Job {
 enum NoteType {
   GENERAL
   PROGRESS
+  DAILY_REPORT
 }
 
 model Note {
@@ -177,6 +178,8 @@ model Note {
   category  String? // e.g., "Material issue", "Customer conversation"
 
   statusTag        String? // Used for Progress logs
+  reportDate       DateTime? // Used for Daily Reports
+  materialsUsed    String?   // Used for Daily Reports
   clientMutationId String?
 
   createdAt DateTime @default(now()) // Can be set by client for offline captures

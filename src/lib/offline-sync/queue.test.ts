@@ -4,6 +4,7 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clearOfflineQueueForTests,
+  enqueueOfflineDailyReport,
   enqueueOfflineFile,
   enqueueOfflineMarkup,
   enqueueOfflineNote,
@@ -95,5 +96,48 @@ describe("offline sync queue", () => {
     if (item.kind !== "MARKUP_SAVE") throw new Error("expected markup item");
     expect(item.payload.fileId).toBe("file-1");
     expect(item.payload.mutations).toHaveLength(1);
+  });
+
+  it("queues daily reports with multiple attachment blobs", async () => {
+    const firstPhoto = new Blob(["photo-1"], { type: "image/jpeg" });
+    const secondPhoto = new Blob(["photo-2"], { type: "image/jpeg" });
+
+    const queued = await enqueueOfflineDailyReport({
+      jobId: "job-1",
+      reportDate: "2026-06-14",
+      workPerformed: "Installed conduit.",
+      materialsUsed: "2 EMT sticks",
+      attachments: [
+        {
+          originalName: "photo-1.jpg",
+          name: "Panel before",
+          contentType: "image/jpeg",
+          blob: firstPhoto,
+        },
+        {
+          originalName: "photo-2.jpg",
+          name: "",
+          contentType: "image/jpeg",
+          blob: secondPhoto,
+        },
+      ],
+    });
+
+    const [item] = await listOfflineQueue();
+
+    expect(item).toMatchObject({
+      id: queued.id,
+      kind: "DAILY_REPORT_CREATE",
+      jobId: "job-1",
+      payload: {
+        reportDate: "2026-06-14",
+        workPerformed: "Installed conduit.",
+        materialsUsed: "2 EMT sticks",
+      },
+    });
+    if (item.kind !== "DAILY_REPORT_CREATE") throw new Error("expected daily report item");
+    expect(item.payload.attachments).toHaveLength(2);
+    expect(await item.payload.attachments[0].blob.text()).toBe("photo-1");
+    expect(await item.payload.attachments[1].blob.text()).toBe("photo-2");
   });
 });

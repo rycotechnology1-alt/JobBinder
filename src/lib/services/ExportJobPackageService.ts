@@ -51,11 +51,12 @@ export type ExportItem = {
   id: string;
   category: string; // e.g. "Photos", "Punch List", "Progress Updates", "Daily Reports", "Material Tickets", "Notes", "Other"
   itemType: "FILE" | "NOTE" | "TASK";
-  textItemType?: "GENERAL" | "PROGRESS" | "TASK" | "PUNCH_LIST";
+  textItemType?: "GENERAL" | "PROGRESS" | "DAILY_REPORT" | "TASK" | "PUNCH_LIST";
   createdAt: string;
   createdBy: string;
   title?: string;
   description?: string;
+  materialsUsed?: string;
   noteCategory?: string;
   statusTag?: string;
   taskStatus?: "OPEN" | "IN_PROGRESS" | "DONE";
@@ -152,9 +153,21 @@ export class ExportJobPackageService {
       return u.name || u.email || "Unknown User";
     };
 
+    const isDailyReportNote = (note: (typeof job.notes)[number]) => {
+      return note.type === "DAILY_REPORT" || note.type === "PROGRESS";
+    };
+
+    const getNoteExportDate = (note: (typeof job.notes)[number]) => {
+      return isDailyReportNote(note) && note.reportDate ? note.reportDate : note.createdAt;
+    };
+
     // 1. PROCESS FILES
     for (const file of job.files) {
-      if (!isWithinDateRange(file.createdAt)) continue;
+      const associatedNote = file.noteId ? job.notes.find((n) => n.id === file.noteId) : null;
+      const fileExportDate = associatedNote && isDailyReportNote(associatedNote)
+        ? getNoteExportDate(associatedNote)
+        : file.createdAt;
+      if (!isWithinDateRange(fileExportDate)) continue;
 
       let folderPath = "";
       let category = "";
@@ -163,7 +176,11 @@ export class ExportJobPackageService {
       const fileCategory = file.category?.toLowerCase() || "";
 
       // Rule classification
-      if (file.type === "PHOTO") {
+      if (associatedNote && isDailyReportNote(associatedNote)) {
+        isIncluded = includedCategories.has("daily_reports");
+        folderPath = "04 - Daily Reports";
+        category = "Daily Reports";
+      } else if (file.type === "PHOTO") {
         isIncluded = includedCategories.has("photos");
         folderPath = "01 - Photos";
         category = "Photos";
@@ -179,16 +196,9 @@ export class ExportJobPackageService {
           category = "Other";
         }
       } else if (file.noteId) {
-        const associatedNote = job.notes.find((n) => n.id === file.noteId);
-        if (associatedNote?.type === "PROGRESS") {
-          isIncluded = includedCategories.has("progress_updates");
-          folderPath = "03 - Progress Updates";
-          category = "Progress Updates";
-        } else {
-          isIncluded = includedCategories.has("notes");
-          folderPath = "06 - Notes";
-          category = "Notes";
-        }
+        isIncluded = includedCategories.has("notes");
+        folderPath = "06 - Notes";
+        category = "Notes";
       } else if (fileCategory === "daily reports" || fileCategory.startsWith("daily")) {
         isIncluded = includedCategories.has("daily_reports");
         folderPath = "04 - Daily Reports";
@@ -210,13 +220,13 @@ export class ExportJobPackageService {
           id: file.id,
           category,
           itemType: "FILE",
-          createdAt: file.createdAt.toISOString(),
+          createdAt: fileExportDate.toISOString(),
           createdBy: getUserDisplayName(file.uploader),
           title: file.name || file.originalName,
           description: file.category || undefined,
           originalFileName: file.originalName,
           exportedFileName: "", // Will be filled in naming step
-          folderPath: options.groupByCategory ? folderPath : "",
+          folderPath: category === "Daily Reports" || options.groupByCategory ? folderPath : "",
           storageKey: file.url,
         });
       }
@@ -236,7 +246,8 @@ export class ExportJobPackageService {
 
     // 2. PROCESS NOTES
     for (const note of job.notes) {
-      if (!isWithinDateRange(note.createdAt)) continue;
+      const noteExportDate = getNoteExportDate(note);
+      if (!isWithinDateRange(noteExportDate)) continue;
 
       let folderPath = "";
       let category = "";
@@ -244,10 +255,10 @@ export class ExportJobPackageService {
 
       const noteCategory = note.category?.toLowerCase() || "";
 
-      if (note.type === "PROGRESS") {
-        isIncluded = includedCategories.has("progress_updates");
-        folderPath = "03 - Progress Updates";
-        category = "Progress Updates";
+      if (isDailyReportNote(note)) {
+        isIncluded = includedCategories.has("daily_reports");
+        folderPath = "04 - Daily Reports";
+        category = "Daily Reports";
       } else if (noteCategory === "daily reports" || noteCategory.startsWith("daily")) {
         isIncluded = includedCategories.has("daily_reports");
         folderPath = "04 - Daily Reports";
@@ -274,14 +285,15 @@ export class ExportJobPackageService {
           category,
           itemType: "NOTE",
           textItemType: note.type,
-          createdAt: note.createdAt.toISOString(),
+          createdAt: noteExportDate.toISOString(),
           createdBy: getUserDisplayName(note.author),
-          title: note.statusTag || note.category || "Note",
+          title: isDailyReportNote(note) ? (note.statusTag || "Daily Report") : (note.statusTag || note.category || "Note"),
           description: note.content,
+          materialsUsed: note.materialsUsed || undefined,
           noteCategory: note.category || undefined,
           statusTag: note.statusTag || undefined,
           exportedFileName: "", // Resolved in naming step
-          folderPath: options.groupByCategory ? folderPath : "",
+          folderPath: category === "Daily Reports" || options.groupByCategory ? folderPath : "",
         });
       }
     }
@@ -408,38 +420,7 @@ export class ExportJobPackageService {
 
     const usedNames = new Map<string, Set<string>>(); // folderPath -> Set of lowercase names
 
-    for (const item of items) {
-      if (item.itemType !== "FILE") {
-        // Notes/Tasks text representations
-        const dateStr = format(new Date(item.createdAt), "yyyy-MM-dd");
-        const cleanTitle = sanitize(item.title || "Item").replace(/\.[a-z0-9]+$/i, "");
-        item.exportedFileName = `${dateStr} - ${item.category} - ${cleanTitle}.txt`;
-        continue;
-      }
-
-      // It's a FILE
-      const original = item.originalFileName || "file.bin";
-      const dotIndex = original.lastIndexOf(".");
-      const ext = dotIndex !== -1 ? original.substring(dotIndex).toLowerCase() : ".bin";
-      const baseOriginal = dotIndex !== -1 ? original.substring(0, dotIndex) : original;
-
-      let nameCandidate = "";
-
-      if (renameEnabled) {
-        const dateStr = format(new Date(item.createdAt), "yyyy-MM-dd");
-        const shortTitle = sanitize(item.title || baseOriginal).replace(/\.[a-z0-9]+$/i, "");
-        nameCandidate = `${dateStr} - ${item.category} - ${shortTitle} - ${original}`;
-      } else {
-        nameCandidate = original;
-      }
-
-      nameCandidate = sanitize(nameCandidate);
-
-      // Handle file extension protection
-      const finalExt = nameCandidate.endsWith(ext) ? "" : ext;
-      const finalName = nameCandidate + finalExt;
-
-      // Duplicate resolution
+    function reserveUniqueName(item: ExportItem, finalName: string) {
       const folderKey = item.folderPath || "root";
       if (!usedNames.has(folderKey)) {
         usedNames.set(folderKey, new Set());
@@ -460,6 +441,40 @@ export class ExportJobPackageService {
 
       set.add(uniqueName.toLowerCase());
       item.exportedFileName = uniqueName;
+    }
+
+    for (const item of items) {
+      if (item.itemType !== "FILE") {
+        // Notes/Tasks text representations
+        const dateStr = this.formatExportItemDate(item);
+        const cleanTitle = sanitize(item.title || "Item").replace(/\.[a-z0-9]+$/i, "");
+        reserveUniqueName(item, `${dateStr} - ${item.category} - ${cleanTitle}.txt`);
+        continue;
+      }
+
+      // It's a FILE
+      const original = item.originalFileName || "file.bin";
+      const dotIndex = original.lastIndexOf(".");
+      const ext = dotIndex !== -1 ? original.substring(dotIndex).toLowerCase() : ".bin";
+      const baseOriginal = dotIndex !== -1 ? original.substring(0, dotIndex) : original;
+
+      let nameCandidate = "";
+
+      if (renameEnabled) {
+        const dateStr = this.formatExportItemDate(item);
+        const shortTitle = sanitize(item.title || baseOriginal).replace(/\.[a-z0-9]+$/i, "");
+        nameCandidate = `${dateStr} - ${item.category} - ${shortTitle} - ${original}`;
+      } else {
+        nameCandidate = original;
+      }
+
+      nameCandidate = sanitize(nameCandidate);
+
+      // Handle file extension protection
+      const finalExt = nameCandidate.endsWith(ext) ? "" : ext;
+      const finalName = nameCandidate + finalExt;
+
+      reserveUniqueName(item, finalName);
     }
   }
 
@@ -925,17 +940,17 @@ export class ExportJobPackageService {
       currentY -= 10;
     }
 
-    // --- PROGRESS LOGS ---
-    const progressUpdates = manifest.items.filter((i) => i.category === "Progress Updates" && i.itemType === "NOTE");
-    if (progressUpdates.length > 0) {
-      drawSectionHeader("Progress Update Logs");
-      for (const item of progressUpdates) {
-        const dateFormatted = format(new Date(item.createdAt), "yyyy-MM-dd");
+    // --- DAILY REPORTS ---
+    const dailyReports = manifest.items.filter((i) => i.category === "Daily Reports" && i.itemType === "NOTE");
+    if (dailyReports.length > 0) {
+      drawSectionHeader("Daily Reports");
+      for (const item of dailyReports) {
+        const dateFormatted = this.formatExportItemDate(item);
         drawLogCard(
           dateFormatted,
           item.createdBy,
-          item.category,
-          item.description || "No text description provided.",
+          item.statusTag || "Daily Report",
+          this.getWorkbookBody(item) || "No text description provided.",
           [0.06, 0.6, 0.54],
           [0.85, 0.95, 0.93]
         );
@@ -999,14 +1014,18 @@ export class ExportJobPackageService {
   }
 
   private static getWorkbookSection(item: ExportItem) {
-    if (item.itemType === "NOTE" && item.textItemType === "PROGRESS") return "Progress Updates";
+    if (item.itemType === "NOTE" && (item.textItemType === "PROGRESS" || item.textItemType === "DAILY_REPORT")) {
+      return "Daily Reports";
+    }
     if (item.itemType === "NOTE") return "Field Notes";
     if (item.itemType === "TASK" && item.textItemType === "PUNCH_LIST") return "Punch List";
     return "Tasks";
   }
 
   private static getWorkbookItemType(item: ExportItem) {
-    if (item.itemType === "NOTE" && item.textItemType === "PROGRESS") return "Progress";
+    if (item.itemType === "NOTE" && (item.textItemType === "PROGRESS" || item.textItemType === "DAILY_REPORT")) {
+      return "Daily Report";
+    }
     if (item.itemType === "NOTE") return "Note";
     if (item.itemType === "TASK" && item.textItemType === "PUNCH_LIST") return "Punch List";
     return "Task";
@@ -1032,9 +1051,56 @@ export class ExportJobPackageService {
     return format(new Date(date), "yyyy-MM-dd");
   }
 
+  private static formatExportItemDate(item: ExportItem) {
+    const isDailyReportCalendarDate = item.textItemType === "DAILY_REPORT"
+      || (item.category === "Daily Reports" && item.createdAt.includes("T00:00:00"));
+
+    if (isDailyReportCalendarDate && item.createdAt.includes("T")) {
+      return item.createdAt.slice(0, 10);
+    }
+
+    return format(new Date(item.createdAt), "yyyy-MM-dd");
+  }
+
   private static getWorkbookCategory(item: ExportItem) {
     if (item.itemType === "NOTE") return item.statusTag || item.noteCategory || item.category;
     return item.category;
+  }
+
+  private static getWorkbookBody(item: ExportItem) {
+    if (item.category !== "Daily Reports" || item.itemType !== "NOTE") {
+      return item.description || "";
+    }
+
+    return [
+      item.description || "",
+      item.materialsUsed ? `Materials Used:\n${item.materialsUsed}` : "",
+    ].filter(Boolean).join("\n\n");
+  }
+
+  private static getDailyReportText(item: ExportItem) {
+    const lines = [
+      "Daily Report",
+      "============",
+      "",
+      `Report Date: ${this.formatWorkbookDate(item.createdAt)}`,
+      `Created By: ${item.createdBy}`,
+      item.statusTag ? `Legacy Tag: ${item.statusTag}` : "",
+      "",
+      "Work Performed",
+      "--------------",
+      item.description || "No work performed was provided.",
+    ];
+
+    if (item.materialsUsed) {
+      lines.push("", "Materials Used", "--------------", item.materialsUsed);
+    }
+
+    return lines.filter((line, index) => line !== "" || lines[index - 1] !== "").join("\n");
+  }
+
+  private static getDailyReportTextItems(manifest: ExportManifest) {
+    return this.getTextItems(manifest).filter((item) => item.category === "Daily Reports" && item.itemType === "NOTE");
   }
 
   private static addTextItemsSheet(workbook: ExcelJS.Workbook, name: string, items: ExportItem[]) {
@@ -1072,7 +1138,7 @@ export class ExportJobPackageService {
         dueDate: this.formatWorkbookDate(item.dueDate),
         assignedTo: item.assignedTo || "",
         category: this.getWorkbookCategory(item),
-        body: item.description || "",
+        body: this.getWorkbookBody(item),
         folderPath: item.folderPath,
       });
     }
@@ -1154,7 +1220,7 @@ export class ExportJobPackageService {
       return acc;
     }, {});
 
-    for (const section of ["Progress Updates", "Field Notes", "Tasks", "Punch List"]) {
+    for (const section of ["Daily Reports", "Field Notes", "Tasks", "Punch List"]) {
       summary.addRow([section, counts[section] || 0]);
     }
 
@@ -1169,8 +1235,8 @@ export class ExportJobPackageService {
     this.addTextItemsSheet(workbook, "All Text Items", textItems);
     this.addTextItemsSheet(
       workbook,
-      "Progress Updates",
-      textItems.filter((item) => this.getWorkbookSection(item) === "Progress Updates"),
+      "Daily Reports",
+      textItems.filter((item) => this.getWorkbookSection(item) === "Daily Reports"),
     );
     this.addTextItemsSheet(
       workbook,
@@ -1218,6 +1284,13 @@ export class ExportJobPackageService {
     if (textItems.length > 0 && outputOptions.includeTextWorkbook) {
       const workbookBuffer = await this.generateTextItemsWorkbook(manifest);
       zip.file("00 - Job Text Items.xlsx", workbookBuffer);
+    }
+
+    for (const item of this.getDailyReportTextItems(manifest)) {
+      const zipPath = item.folderPath
+        ? `${item.folderPath}/${item.exportedFileName}`
+        : item.exportedFileName;
+      zip.file(zipPath, this.getDailyReportText(item));
     }
 
     // 2. DOWNLOAD AND INSERT R2 FILES IN PARALLEL WITH GRACEFUL ERROR HANDLING

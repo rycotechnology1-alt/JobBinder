@@ -14,10 +14,12 @@ import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton"
 
 type NoteItem = {
   id: string;
-  type: "GENERAL" | "PROGRESS";
+  type: "GENERAL" | "PROGRESS" | "DAILY_REPORT";
   content: string;
   category: string | null;
   statusTag: string | null;
+  reportDate: string | null;
+  materialsUsed: string | null;
   createdAt: string;
   authorName: string;
 };
@@ -28,6 +30,7 @@ type FileItem = {
   originalName: string;
   name: string | null;
   category: string | null;
+  noteId: string | null;
   createdAt: string;
 };
 
@@ -42,7 +45,7 @@ type TaskItem = {
   createdAt: string;
 };
 
-type Tab = "FEED" | "FILES" | "TASKS";
+type Tab = "FEED" | "FILES" | "DAILY_REPORTS" | "TASKS";
 type TaskStatus = TaskItem["status"];
 
 type Props = {
@@ -67,6 +70,24 @@ function sortTasks(tasks: TaskItem[]) {
   });
 }
 
+function isDailyReport(note: NoteItem) {
+  return note.type === "DAILY_REPORT" || note.type === "PROGRESS";
+}
+
+function getReportDisplayDate(note: NoteItem) {
+  return note.reportDate || note.createdAt;
+}
+
+function formatDisplayDate(value: string) {
+  const dateOnly = value.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+    const [year, month, day] = dateOnly.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString();
+  }
+
+  return new Date(value).toLocaleDateString();
+}
+
 export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("FEED");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -82,6 +103,11 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Pr
   }, [taskStatusOverrides, initialTasks]);
 
   const incompleteTaskCount = countIncompleteTasks(tasks);
+  const dailyReports = useMemo(() => {
+    return notes
+      .filter(isDailyReport)
+      .sort((a, b) => new Date(getReportDisplayDate(b)).getTime() - new Date(getReportDisplayDate(a)).getTime());
+  }, [notes]);
 
   const fileCounts = useMemo(() => {
     return ASSET_CATEGORIES.reduce<Record<string, number>>((counts, category) => {
@@ -152,6 +178,9 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Pr
         <button type="button" className={tabClass("FILES")} onClick={() => setActiveTab("FILES")}>
           Files ({files.length})
         </button>
+        <button type="button" className={tabClass("DAILY_REPORTS")} onClick={() => setActiveTab("DAILY_REPORTS")}>
+          Daily Reports ({dailyReports.length})
+        </button>
         <button type="button" className={tabClass("TASKS")} onClick={() => setActiveTab("TASKS")}>
           Tasks ({incompleteTaskCount})
         </button>
@@ -212,6 +241,24 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Pr
               </div>
             )}
           </div>
+        )}
+
+        {activeTab === "DAILY_REPORTS" && (
+          dailyReports.length === 0 ? (
+            <p className="text-zinc-500 text-center py-10">No daily reports yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {dailyReports.map((report) => (
+                <DailyReportCard
+                  key={report.id}
+                  report={report}
+                  files={files.filter((file) => file.noteId === report.id)}
+                  isAdmin={isAdmin}
+                  onDeleted={refreshAfterDelete}
+                />
+              ))}
+            </div>
+          )
         )}
 
         {activeTab === "TASKS" && (
@@ -389,4 +436,74 @@ function getNextTaskAction(task: TaskItem) {
     variant: "ghost" as const,
     Icon: RotateCcw,
   };
+}
+
+function DailyReportCard({
+  report,
+  files,
+  isAdmin,
+  onDeleted,
+}: {
+  report: NoteItem;
+  files: FileItem[];
+  isAdmin: boolean;
+  onDeleted: () => void;
+}) {
+  const reportDate = formatDisplayDate(getReportDisplayDate(report));
+
+  return (
+    <article className="rounded-xl border border-zinc-800 bg-black/20 p-4 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-zinc-100">Daily Report</h3>
+            {report.type === "PROGRESS" && <Badge variant="success">Legacy Progress</Badge>}
+          </div>
+          <p className="mt-1 text-xs text-zinc-500">
+            {reportDate} by {report.authorName}
+          </p>
+        </div>
+        {isAdmin && (
+          <DeleteConfirmationButton
+            endpoint={`/api/notes/${report.id}`}
+            label={`Delete daily report from ${reportDate}`}
+            title="Delete daily report"
+            message="Delete this daily report from the job? This cannot be undone."
+            onDeleted={onDeleted}
+          />
+        )}
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Work Performed</p>
+        <p className="mt-1 text-sm leading-relaxed text-zinc-300">{report.content}</p>
+      </div>
+
+      {report.materialsUsed && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Materials Used</p>
+          <p className="mt-1 text-sm leading-relaxed text-zinc-300">{report.materialsUsed}</p>
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Attachments</p>
+          <div className="space-y-3">
+            {files.map((file) => (
+              <FilePreview
+                key={file.id}
+                fileId={file.id}
+                type={file.type}
+                filename={file.name || file.originalName}
+                category={file.category}
+                canDelete={isAdmin}
+                onDelete={onDeleted}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </article>
+  );
 }

@@ -2,7 +2,7 @@ import type { MarkMutation } from "@/lib/markup/types";
 
 export type OfflineQueueStatus = "PENDING" | "SYNCING" | "FAILED";
 
-export type OfflineQueueKind = "NOTE_CREATE" | "TASK_CREATE" | "FILE_UPLOAD" | "MARKUP_SAVE";
+export type OfflineQueueKind = "NOTE_CREATE" | "TASK_CREATE" | "FILE_UPLOAD" | "DAILY_REPORT_CREATE" | "MARKUP_SAVE";
 
 type OfflineQueueBase = {
   id: string;
@@ -45,6 +45,23 @@ export type OfflineFileQueueItem = OfflineQueueBase & {
   };
 };
 
+export type OfflineDailyReportAttachment = {
+  originalName: string;
+  name: string;
+  contentType: string;
+  blob: Blob;
+};
+
+export type OfflineDailyReportQueueItem = OfflineQueueBase & {
+  kind: "DAILY_REPORT_CREATE";
+  payload: {
+    reportDate: string;
+    workPerformed: string;
+    materialsUsed: string;
+    attachments: OfflineDailyReportAttachment[];
+  };
+};
+
 export type OfflineMarkupQueueItem = OfflineQueueBase & {
   kind: "MARKUP_SAVE";
   payload: {
@@ -57,6 +74,7 @@ export type OfflineQueueItem =
   | OfflineNoteQueueItem
   | OfflineTaskQueueItem
   | OfflineFileQueueItem
+  | OfflineDailyReportQueueItem
   | OfflineMarkupQueueItem;
 
 export type QueueOfflineNoteInput = {
@@ -82,6 +100,14 @@ export type QueueOfflineFileInput = {
   contentType: string;
   category: string;
   blob: Blob;
+};
+
+export type QueueOfflineDailyReportInput = {
+  jobId: string;
+  reportDate: string;
+  workPerformed: string;
+  materialsUsed?: string;
+  attachments?: OfflineDailyReportAttachment[];
 };
 
 export type QueueOfflineMarkupInput = {

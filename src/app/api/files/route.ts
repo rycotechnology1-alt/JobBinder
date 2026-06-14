@@ -13,6 +13,9 @@ export async function POST(req: NextRequest) {
     const user = await requireCompanyUser();
     const body = await req.json();
     const { jobId, createdAt } = body;
+    const noteId = typeof body.noteId === "string" && body.noteId.trim()
+      ? body.noteId.trim()
+      : null;
     const clientMutationId = typeof body.clientMutationId === "string" && body.clientMutationId.trim()
       ? body.clientMutationId.trim()
       : null;
@@ -47,6 +50,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (noteId) {
+      if (!jobId) {
+        return NextResponse.json({ error: "Job is required for daily report attachments" }, { status: 400 });
+      }
+
+      const note = await prisma.note.findFirst({
+        where: { id: noteId, companyId: user.companyId, jobId },
+        select: { id: true, jobId: true },
+      });
+
+      if (!note) {
+        return NextResponse.json({ error: "Daily report not found" }, { status: 404 });
+      }
+    }
+
     const file = await prisma.file.create({
       data: {
         companyId: user.companyId,
@@ -59,6 +77,7 @@ export async function POST(req: NextRequest) {
         category: validation.value.category,
         contentType: validation.value.contentType,
         sizeBytes: validation.value.sizeBytes,
+        ...(noteId ? { noteId } : {}),
         ...(clientMutationId ? { clientMutationId } : {}),
         ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
       },

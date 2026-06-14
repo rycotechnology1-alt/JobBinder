@@ -19,7 +19,7 @@ function makeTextManifest(): ExportManifest {
       generatedBy: "Project Admin",
       destination: "zip",
     },
-    folders: ["02 - Punch List", "03 - Progress Updates", "06 - Notes", "99 - Other"],
+    folders: ["02 - Punch List", "04 - Daily Reports", "06 - Notes", "99 - Other"],
     items: [
       {
         id: "note-1",
@@ -36,16 +36,29 @@ function makeTextManifest(): ExportManifest {
       },
       {
         id: "progress-1",
-        category: "Progress Updates",
+        category: "Daily Reports",
         itemType: "NOTE",
         textItemType: "PROGRESS",
         createdAt: "2026-05-19T15:45:00.000Z",
         createdBy: "Foreman",
         title: "Pole transfer",
         description: "Transferred service and cleaned work area.",
-        exportedFileName: "2026-05-19 - Progress Updates - Pole transfer.txt",
-        folderPath: "03 - Progress Updates",
+        exportedFileName: "2026-05-19 - Daily Reports - Pole transfer.txt",
+        folderPath: "04 - Daily Reports",
         statusTag: "Pole transfer",
+      },
+      {
+        id: "daily-1",
+        category: "Daily Reports",
+        itemType: "NOTE",
+        textItemType: "DAILY_REPORT",
+        createdAt: "2026-05-20T00:00:00.000Z",
+        createdBy: "Foreman",
+        title: "Daily Report",
+        description: "Installed conduit and cleaned work area.",
+        materialsUsed: "2 EMT sticks",
+        exportedFileName: "2026-05-20 - Daily Reports - Daily Report.txt",
+        folderPath: "04 - Daily Reports",
       },
       {
         id: "task-1",
@@ -169,6 +182,40 @@ describe("ExportJobPackageService Naming and Sanitization", () => {
     expect(items[2].exportedFileName).toBe("2026-05-20 - Photos - Trench - IMG_4421 (3).jpg");
   });
 
+  it("resolves duplicate daily report text names within the same folder path", () => {
+    const items: ExportItem[] = [
+      {
+        id: "daily-1",
+        category: "Daily Reports",
+        itemType: "NOTE",
+        textItemType: "DAILY_REPORT",
+        createdAt: "2026-05-20T00:00:00Z",
+        createdBy: "Foreman",
+        title: "Daily Report",
+        description: "Installed conduit.",
+        exportedFileName: "",
+        folderPath: "04 - Daily Reports",
+      },
+      {
+        id: "daily-2",
+        category: "Daily Reports",
+        itemType: "NOTE",
+        textItemType: "DAILY_REPORT",
+        createdAt: "2026-05-20T00:00:00Z",
+        createdBy: "Foreman",
+        title: "Daily Report",
+        description: "Pulled wire.",
+        exportedFileName: "",
+        folderPath: "04 - Daily Reports",
+      },
+    ];
+
+    ExportJobPackageService.resolveExportFileNames(items, true);
+
+    expect(items[0].exportedFileName).toBe("2026-05-20 - Daily Reports - Daily Report.txt");
+    expect(items[1].exportedFileName).toBe("2026-05-20 - Daily Reports - Daily Report (2).txt");
+  });
+
   it("keeps original filename if renameFilesForReadability is false", () => {
     const items: ExportItem[] = [
       {
@@ -199,7 +246,7 @@ describe("ExportJobPackageService structured text workbook", () => {
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
       "Job Summary",
       "All Text Items",
-      "Progress Updates",
+      "Daily Reports",
       "Field Notes",
       "Tasks",
       "Punch List",
@@ -231,8 +278,8 @@ describe("ExportJobPackageService structured text workbook", () => {
     expect(progressRow).toEqual([
       undefined,
       "progress-1",
-      "Progress Updates",
-      "Progress",
+      "Daily Reports",
+      "Daily Report",
       "2026-05-19 15:45",
       "Foreman",
       "Pole transfer",
@@ -242,10 +289,28 @@ describe("ExportJobPackageService structured text workbook", () => {
       "",
       "Pole transfer",
       "Transferred service and cleaned work area.",
-      "03 - Progress Updates",
+      "04 - Daily Reports",
     ]);
 
-    const taskRow = allTextItems.getRow(4).values;
+    const dailyReportRow = allTextItems.getRow(4).values;
+    expect(dailyReportRow).toEqual([
+      undefined,
+      "daily-1",
+      "Daily Reports",
+      "Daily Report",
+      "2026-05-20 00:00",
+      "Foreman",
+      "Daily Report",
+      "",
+      "",
+      "",
+      "",
+      "Daily Reports",
+      "Installed conduit and cleaned work area.\n\nMaterials Used:\n2 EMT sticks",
+      "04 - Daily Reports",
+    ]);
+
+    const taskRow = allTextItems.getRow(5).values;
     expect(taskRow).toEqual([
       undefined,
       "task-1",
@@ -263,7 +328,7 @@ describe("ExportJobPackageService structured text workbook", () => {
       "99 - Other",
     ]);
 
-    expect(workbook.getWorksheet("Progress Updates")!.actualRowCount).toBe(2);
+    expect(workbook.getWorksheet("Daily Reports")!.actualRowCount).toBe(3);
     expect(workbook.getWorksheet("Field Notes")!.actualRowCount).toBe(2);
     expect(workbook.getWorksheet("Tasks")!.actualRowCount).toBe(2);
     expect(workbook.getWorksheet("Punch List")!.actualRowCount).toBe(2);
@@ -280,8 +345,13 @@ describe("ExportJobPackageService structured text workbook", () => {
     const fileNames = Object.keys(zip.files);
 
     expect(fileNames).toContain("00 - Job Text Items.xlsx");
+    expect(fileNames).toContain("04 - Daily Reports/2026-05-19 - Daily Reports - Pole transfer.txt");
+    expect(fileNames).toContain("04 - Daily Reports/2026-05-20 - Daily Reports - Daily Report.txt");
     expect(fileNames).not.toContain("00 - Job Summary.pdf");
     expect(fileNames).not.toContain("00 - Item Index.csv");
-    expect(fileNames.filter((fileName) => fileName.endsWith(".txt"))).toEqual([]);
+    expect(fileNames.filter((fileName) => fileName.endsWith(".txt"))).toEqual([
+      "04 - Daily Reports/2026-05-19 - Daily Reports - Pole transfer.txt",
+      "04 - Daily Reports/2026-05-20 - Daily Reports - Daily Report.txt",
+    ]);
   });
 });

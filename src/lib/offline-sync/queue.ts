@@ -1,5 +1,7 @@
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
+  OfflineDailyReportAttachment,
+  OfflineDailyReportQueueItem,
   OfflineFileQueueItem,
   OfflineMarkupQueueItem,
   OfflineNoteQueueItem,
@@ -7,6 +9,7 @@ import type {
   OfflineQueueStatus,
   OfflineTaskQueueItem,
   QueueOfflineFileInput,
+  QueueOfflineDailyReportInput,
   QueueOfflineMarkupInput,
   QueueOfflineNoteInput,
   QueueOfflineTaskInput,
@@ -24,11 +27,21 @@ type StoredOfflineFileQueueItem = Omit<OfflineFileQueueItem, "payload"> & {
     blobType: string;
   };
 };
+type StoredDailyReportAttachment = Omit<OfflineDailyReportAttachment, "blob"> & {
+  blobData: ArrayBuffer;
+  blobType: string;
+};
+type StoredOfflineDailyReportQueueItem = Omit<OfflineDailyReportQueueItem, "payload"> & {
+  payload: Omit<OfflineDailyReportQueueItem["payload"], "attachments"> & {
+    attachments: StoredDailyReportAttachment[];
+  };
+};
 type StoredOfflineQueueItem =
   | OfflineNoteQueueItem
   | OfflineTaskQueueItem
   | OfflineMarkupQueueItem
-  | StoredOfflineFileQueueItem;
+  | StoredOfflineFileQueueItem
+  | StoredOfflineDailyReportQueueItem;
 
 interface OfflineSyncDatabase extends DBSchema {
   [OFFLINE_QUEUE_STORE]: {
@@ -72,6 +85,24 @@ function notifyQueueChanged() {
 }
 
 async function serializeQueueItem(item: OfflineQueueItem): Promise<StoredOfflineQueueItem> {
+  if (item.kind === "DAILY_REPORT_CREATE") {
+    return {
+      ...item,
+      payload: {
+        ...item.payload,
+        attachments: await Promise.all(
+          item.payload.attachments.map(async (attachment) => ({
+            originalName: attachment.originalName,
+            name: attachment.name,
+            contentType: attachment.contentType,
+            blobType: attachment.blob.type,
+            blobData: await attachment.blob.arrayBuffer(),
+          })),
+        ),
+      },
+    };
+  }
+
   if (item.kind !== "FILE_UPLOAD") return item;
 
   blobCache.set(item.id, item.payload.blob);
@@ -89,6 +120,21 @@ async function serializeQueueItem(item: OfflineQueueItem): Promise<StoredOffline
 }
 
 function deserializeQueueItem(item: StoredOfflineQueueItem): OfflineQueueItem {
+  if (item.kind === "DAILY_REPORT_CREATE") {
+    return {
+      ...item,
+      payload: {
+        ...item.payload,
+        attachments: item.payload.attachments.map((attachment) => ({
+          originalName: attachment.originalName,
+          name: attachment.name,
+          contentType: attachment.contentType,
+          blob: new Blob([attachment.blobData], { type: attachment.contentType || attachment.blobType }),
+        })),
+      },
+    };
+  }
+
   if (item.kind !== "FILE_UPLOAD") return item;
 
   const cachedBlob = blobCache.get(item.id);
@@ -174,6 +220,27 @@ export async function enqueueOfflineFile(input: QueueOfflineFileInput): Promise<
   return addQueueItem(item);
 }
 
+export async function enqueueOfflineDailyReport(input: QueueOfflineDailyReportInput): Promise<OfflineDailyReportQueueItem> {
+  for (const attachment of input.attachments ?? []) {
+    if (attachment.blob.size > MAX_OFFLINE_FILE_SIZE_BYTES) {
+      throw new Error("Files larger than 25 MB need an internet connection to upload.");
+    }
+  }
+
+  const item: OfflineDailyReportQueueItem = {
+    ...baseQueueItem("DAILY_REPORT_CREATE", input.jobId),
+    kind: "DAILY_REPORT_CREATE",
+    payload: {
+      reportDate: input.reportDate,
+      workPerformed: input.workPerformed,
+      materialsUsed: input.materialsUsed ?? "",
+      attachments: input.attachments ?? [],
+    },
+  };
+
+  return addQueueItem(item);
+}
+
 export async function enqueueOfflineMarkup(input: QueueOfflineMarkupInput): Promise<OfflineMarkupQueueItem> {
   const item: OfflineMarkupQueueItem = {
     ...baseQueueItem("MARKUP_SAVE", null),
@@ -190,6 +257,7 @@ export async function enqueueOfflineMarkup(input: QueueOfflineMarkupInput): Prom
 export const queueOfflineNote = enqueueOfflineNote;
 export const queueOfflineTask = enqueueOfflineTask;
 export const queueOfflineFile = enqueueOfflineFile;
+export const queueOfflineDailyReport = enqueueOfflineDailyReport;
 export const queueOfflineMarkup = enqueueOfflineMarkup;
 
 export async function listOfflineQueue() {
