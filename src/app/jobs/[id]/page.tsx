@@ -63,7 +63,7 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center gap-4">
-        <Link href="/" className="p-2 rounded-full hover:bg-zinc-800 transition-colors">
+        <Link href="/dashboard" className="p-2 rounded-full hover:bg-zinc-800 transition-colors">
           <ArrowLeft size={20} className="text-zinc-400" />
         </Link>
         <div className="flex-1">

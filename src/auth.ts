@@ -1,11 +1,12 @@
 import NextAuth from "next-auth";
-import Resend from "next-auth/providers/resend";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+import Credentials from "next-auth/providers/credentials";
 import prisma from "@/lib/prisma";
-import { normalizeInviteEmail } from "@/lib/auth-rules";
+import { normalizeAuthEmail } from "@/lib/auth-rules";
+import { verifyPassword } from "@/lib/auth-password";
+
+const useSecureCookies = process.env.NODE_ENV === "production";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
   secret:
     process.env.AUTH_SECRET ??
     process.env.NEXTAUTH_SECRET ??
@@ -15,26 +16,80 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   pages: {
     signIn: "/sign-in",
-    verifyRequest: "/check-email",
+  },
+  session: {
+    strategy: "jwt",
+  },
+  cookies: {
+    sessionToken: {
+      name: `${useSecureCookies ? "__Secure-" : ""}jobbinder.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
   },
   providers: [
-    Resend({
-      apiKey: process.env.AUTH_RESEND_KEY ?? process.env.RESEND_API_KEY,
-      from:
-        process.env.AUTH_EMAIL_FROM ??
-        "JobBinder <invites@jobbinder.app>",
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const email =
+          typeof credentials?.email === "string"
+            ? normalizeAuthEmail(credentials.email)
+            : "";
+        const password =
+          typeof credentials?.password === "string" ? credentials.password : "";
+
+        if (!email || !password) return null;
+
+        const user = await prisma.user.findUnique({
+          where: { email },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            hashedPassword: true,
+          },
+        });
+
+        if (!user?.hashedPassword) return null;
+
+        const passwordMatches = await verifyPassword(password, user.hashedPassword);
+        if (!passwordMatches) return null;
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+        };
+      },
     }),
   ],
   callbacks: {
-    async session({ session, user }) {
-      if (!session.user) return session;
+    async jwt({ token, user }) {
+      if (user?.id) {
+        token.sub = user.id;
+      }
+
+      return token;
+    },
+    async session({ session, token }) {
+      if (!session.user || !token.sub) return session;
 
       const appUser = await prisma.user.findUnique({
-        where: { id: user.id },
+        where: { id: token.sub },
         select: {
           id: true,
           companyId: true,
           email: true,
+          emailVerified: true,
           name: true,
           role: true,
         },
@@ -45,46 +100,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.id = appUser.id;
       session.user.companyId = appUser.companyId;
       session.user.role = appUser.role;
+      session.user.emailVerified = appUser.emailVerified;
       return session;
-    },
-  },
-  events: {
-    async signIn({ user }) {
-      if (!user.email || !user.id) return;
-
-      const email = normalizeInviteEmail(user.email);
-      const appUser = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: { companyId: true, name: true },
-      });
-
-      if (!appUser || appUser.companyId) return;
-
-      const invite = await prisma.invite.findFirst({
-        where: {
-          email,
-          acceptedAt: null,
-          expiresAt: { gt: new Date() },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      if (!invite) return;
-
-      await prisma.$transaction([
-        prisma.user.update({
-          where: { id: user.id },
-          data: {
-            companyId: invite.companyId,
-            role: invite.role,
-            name: appUser.name ?? email.split("@")[0],
-          },
-        }),
-        prisma.invite.update({
-          where: { id: invite.id },
-          data: { acceptedAt: new Date() },
-        }),
-      ]);
     },
   },
 });

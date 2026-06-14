@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Inbox, Settings } from "lucide-react";
+import { HardHat, Inbox, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
+  { href: "/dashboard", label: "Jobs", icon: HardHat },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/settings/team", label: "Team", icon: Settings },
 ];

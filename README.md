@@ -8,8 +8,8 @@ JobBinder is a mobile-first job management application designed for small constr
 *   **ORM:** Prisma
 *   **Storage:** Cloudflare R2 (S3 Compatible)
 *   **Styling:** Tailwind CSS (v4) with a sleek Dark Mode & Glassmorphism aesthetic.
-*   **Auth:** Auth.js / NextAuth magic links
-*   **Email:** Resend (for sign-in links and User Invites)
+*   **Auth:** Auth.js / NextAuth email/password credentials with JWT sessions
+*   **Email:** Resend (for email verification, password setup/reset, and user invites)
 
 ---
 
@@ -19,7 +19,7 @@ As of the completion of the MVP 8-Step Roadmap, here is the exact state of the r
 
 ### ✅ What is Done (Fully Functional)
 *   **Database Schema:** Complete Prisma schema deployed to Neon (Companies, Users, Auth.js sessions/tokens, Invites, Jobs, Notes, Files, Tasks).
-*   **Authentication & Access:** Auth.js magic-link sign-in is wired through Resend. Signed-in users create a company during onboarding, and app pages/API routes derive company/user access from the session.
+*   **Authentication & Access:** Auth.js email/password sign-in is wired through credentials auth. New admins create a company profile during signup, verify their email through Resend, and app pages/API routes derive company/user access from the session.
 *   **Team Settings:** Admins can view crew members and send email invites from `/settings/team`. Free companies are limited to 5 users.
 *   **Core API Surface:** `GET/POST` REST routes for Jobs, Notes, Tasks, and the Inbox are scoped to the authenticated user's company.
 *   **The Dashboard UI:** Live, dynamic grid of Job Cards with glowing status progress bars and a "Start New Project" modal.

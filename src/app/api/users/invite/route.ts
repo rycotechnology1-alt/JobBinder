@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Role } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { signIn } from "@/auth";
 import { canInviteMoreUsers, normalizeInviteEmail } from "@/lib/auth-rules";
+import { createOneTimeToken } from "@/lib/auth-tokens";
+import { sendInviteEmail } from "@/lib/auth-email";
 import {
   accessErrorResponse,
   requireAdminUser,
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await prisma.invite.upsert({
+    const invite = await prisma.invite.upsert({
       where: {
         companyId_email: {
           companyId: user.companyId,
@@ -79,10 +80,18 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await signIn("resend", {
+    const token = await createOneTimeToken({
+      prisma,
+      purpose: "invite",
+      key: invite.id,
+      maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    await sendInviteEmail({
       email: normalizedEmail,
-      redirect: false,
-      redirectTo: "/",
+      inviteId: invite.id,
+      token,
+      companyName: company.name,
     });
 
     return NextResponse.json({

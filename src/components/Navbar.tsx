@@ -8,6 +8,7 @@ import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 
 export async function Navbar() {
   const user = await getCurrentAppUser();
+  const hasVerifiedCompany = Boolean(user?.companyId && user.emailVerified);
 
   async function handleSignOut() {
     "use server";
@@ -20,7 +21,7 @@ export async function Navbar() {
       <div className="max-w-5xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
         
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 group">
+        <Link href={hasVerifiedCompany ? "/dashboard" : "/"} className="flex items-center gap-2 group">
           <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center shadow-lg shadow-brand/20 group-hover:scale-105 transition-transform">
             <HardHat size={20} className="text-white" />
           </div>
@@ -28,14 +29,14 @@ export async function Navbar() {
         </Link>
 
         <div className="flex items-center gap-6">
-          {user?.companyId && <NavLinks />}
-          {user?.companyId && <SyncStatusIndicator />}
+          {hasVerifiedCompany && <NavLinks />}
+          {hasVerifiedCompany && <SyncStatusIndicator />}
           
           {user ? (
             <AccountMenu
               displayName={user.name ?? user.email ?? "User"}
               email={user.email ?? null}
-              hasCompany={Boolean(user.companyId)}
+              hasCompany={hasVerifiedCompany}
               signOutAction={handleSignOut}
             />
           ) : (

@@ -40,6 +40,10 @@ export async function requireCurrentUser() {
 export async function requireCompanyUser() {
   const user = await requireCurrentUser();
 
+  if (!user.emailVerified) {
+    throw new AccessError(403, "Email verification required");
+  }
+
   if (!user.companyId || !user.company) {
     throw new AccessError(409, "Company onboarding required");
   }
@@ -67,8 +71,12 @@ export async function requirePageCompanyUser() {
     redirect("/sign-in");
   }
 
+  if (!user.emailVerified) {
+    redirect("/verify-email");
+  }
+
   if (!user.companyId || !user.company) {
-    redirect("/onboarding");
+    redirect("/");
   }
 
   return user as typeof user & {
