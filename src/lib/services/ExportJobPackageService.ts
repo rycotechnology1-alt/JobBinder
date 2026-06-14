@@ -4,6 +4,8 @@ import JSZip from "jszip";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import prisma from "@/lib/prisma";
 import { downloadR2Object } from "@/lib/r2";
+import { getFilePreviewInfo } from "@/lib/file-preview";
+import { ensureFileMarkupPdf, markupFilename } from "@/lib/markup/generate";
 
 export type ExportOptions = {
   destination: "zip" | "share_link" | "google_drive" | "onedrive";
@@ -125,8 +127,24 @@ export class ExportJobPackageService {
 
     const includedCategories = new Set(options.categories.map((c) => c.toLowerCase()));
 
+    // Files that have at least one (non-deleted) markup — only queried when the
+    // "markups" category is requested.
+    const includeMarkups = includedCategories.has("markups");
+    let filesWithMarks = new Set<string>();
+    if (includeMarkups && job.files.length > 0) {
+      const marked = await prisma.fileMarkupMark.findMany({
+        where: { fileId: { in: job.files.map((f) => f.id) }, deletedAt: null },
+        select: { fileId: true },
+        distinct: ["fileId"],
+      });
+      filesWithMarks = new Set(marked.map((m) => m.fileId));
+    }
+
     const items: ExportItem[] = [];
     const warnings: string[] = [];
+    // Files needing a flattened marked-up PDF added beside their original. Resolved
+    // after classification so each markup reuses its file's home folder.
+    const markupCandidates: { file: (typeof job.files)[number]; folderPath: string }[] = [];
 
     // Helper to get author name
     const getUserDisplayName = (u: { name: string | null; email: string | null } | null) => {
@@ -201,6 +219,18 @@ export class ExportJobPackageService {
           folderPath: options.groupByCategory ? folderPath : "",
           storageKey: file.url,
         });
+      }
+
+      // Collect marked-up version (placed beside the original in its home folder).
+      // Independent of the original's inclusion so "Markups" works as its own category.
+      if (includeMarkups && filesWithMarks.has(file.id)) {
+        const { renderMode } = getFilePreviewInfo({
+          filename: file.name || file.originalName,
+          contentType: file.contentType,
+        });
+        if (renderMode === "pdf" || renderMode === "image") {
+          markupCandidates.push({ file, folderPath });
+        }
       }
     }
 
@@ -291,6 +321,38 @@ export class ExportJobPackageService {
           exportedFileName: "", // Resolved in naming step
           folderPath: options.groupByCategory ? folderPath : "",
         });
+      }
+    }
+
+    // 4. PROCESS MARKUPS — generate/fetch each flattened PDF and add it beside its original.
+    if (markupCandidates.length > 0) {
+      const markupItems = await Promise.all(
+        markupCandidates.map(async (c) => {
+          try {
+            const res = await ensureFileMarkupPdf({ file: c.file, companyId });
+            if (!res) return null;
+            const item: ExportItem = {
+              id: `${c.file.id}-markup`,
+              category: "Markups",
+              itemType: "FILE",
+              createdAt: c.file.createdAt.toISOString(),
+              createdBy: getUserDisplayName(c.file.uploader),
+              title: c.file.name || c.file.originalName,
+              originalFileName: markupFilename(c.file.name, c.file.originalName),
+              exportedFileName: "",
+              folderPath: options.groupByCategory ? c.folderPath : "",
+              storageKey: res.storageKey,
+            };
+            return item;
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : "unknown error";
+            warnings.push(`- Markup for file ${c.file.id} could not be generated.\n  Reason: ${reason}`);
+            return null;
+          }
+        }),
+      );
+      for (const item of markupItems) {
+        if (item) items.push(item);
       }
     }
 
@@ -746,6 +808,7 @@ export class ExportJobPackageService {
       "Daily Reports": "04 - Daily Reports/",
       "Material Tickets": "05 - Material Tickets/",
       Notes: "06 - Notes/",
+      Markups: "Various (beside originals)",
       Other: "99 - Other/",
     };
 

@@ -29,7 +29,7 @@ export async function POST(
     const options: ExportOptions = {
       destination: body.destination || "zip",
       dateRange: body.dateRange,
-      categories: body.categories || ["photos", "notes", "punch_list", "progress_updates", "daily_reports", "material_tickets", "other"],
+      categories: body.categories || ["photos", "notes", "punch_list", "progress_updates", "daily_reports", "material_tickets", "markups", "other"],
       includeSummaryPdf: body.includeSummaryPdf !== false,
       includeItemIndexCsv: body.includeItemIndexCsv !== false,
       includeTextWorkbook: body.includeTextWorkbook !== false,

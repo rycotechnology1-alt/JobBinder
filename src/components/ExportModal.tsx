@@ -52,6 +52,7 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
     progress_updates: true,
     daily_reports: true,
     material_tickets: true,
+    markups: true,
     other: true,
   });
 
@@ -365,6 +366,7 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
                   progress_updates: "Progress Updates",
                   daily_reports: "Daily Reports",
                   material_tickets: "Material Tickets",
+                  markups: "Markups",
                   other: "Other Items",
                 };
                 return (
