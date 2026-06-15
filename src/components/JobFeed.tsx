@@ -27,6 +27,8 @@ type FileItem = {
   name: string | null;
   category: string | null;
   noteId: string | null;
+  taskId?: string | null;
+  markupMarkId?: string | null;
   createdAt: string;
 };
 
@@ -65,7 +67,7 @@ export function JobFeed({ notes, files, isAdmin, onItemDeleted }: Props) {
   const feedItems = useMemo<FeedItem[]>(() => {
     return [
       ...notes.map((note) => ({ ...note, kind: "note" as const })),
-      ...files.filter((file) => !file.noteId).map((file) => ({ ...file, kind: "file" as const })),
+      ...files.filter((file) => !file.noteId && !file.taskId && !file.markupMarkId).map((file) => ({ ...file, kind: "file" as const })),
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [notes, files]);
 

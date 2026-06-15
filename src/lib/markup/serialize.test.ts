@@ -14,7 +14,16 @@ const validMark = {
 describe("parseMarkMutations", () => {
   it("accepts a valid upsert and strips server-owned fields", () => {
     const result = parseMarkMutations({
-      mutations: [{ op: "upsert", mark: { ...validMark, fileId: "spoofed", authorId: "spoofed" } }],
+      mutations: [{
+        op: "upsert",
+        mark: {
+          ...validMark,
+          fileId: "spoofed",
+          authorId: "spoofed",
+          attachments: [{ id: "file-1", originalName: "spoof.jpg" }],
+          task: { id: "task-1", status: "DONE" },
+        },
+      }],
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -22,6 +31,8 @@ describe("parseMarkMutations", () => {
     expect(mutation.op).toBe("upsert");
     if (mutation.op !== "upsert") return;
     expect(mutation.mark.fileId).toBe(""); // never trusted from the client
+    expect("attachments" in mutation.mark).toBe(false);
+    expect("task" in mutation.mark).toBe(false);
     expect(mutation.mark.kind).toBe("ELLIPSE");
   });
 
@@ -85,6 +96,61 @@ describe("serializeMark", () => {
       sequence: 3,
       deletedAt: null,
       clientUpdatedAt: "2026-06-13T12:00:00.000Z",
+    });
+  });
+
+  it("adds server-owned attachment and task metadata when provided", () => {
+    const mark = serializeMark(
+      {
+        id: "mark-1",
+        fileId: "file-1",
+        page: 1,
+        kind: "PIN",
+        geometry: { x: 0.5, y: 0.5 },
+        style: { color: "#22c55e", strokeWidth: 0.004, opacity: 1 },
+        text: "Check this",
+        sequence: 3,
+        authorId: "user-1",
+        deletedAt: null,
+        clientUpdatedAt: new Date("2026-06-13T12:00:00.000Z"),
+      },
+      {
+        attachments: [
+          {
+            id: "file-1",
+            type: "PHOTO",
+            originalName: "pin-photo.jpg",
+            name: null,
+            category: "Issue",
+            contentType: "image/jpeg",
+            sizeBytes: 1234,
+            createdAt: new Date("2026-06-13T12:05:00.000Z"),
+          },
+        ],
+        task: {
+          id: "task-1",
+          title: "Fix issue",
+          status: "OPEN",
+          type: "TASK",
+          dueDate: null,
+        },
+      },
+    );
+
+    expect(mark).toMatchObject({
+      id: "mark-1",
+      attachments: [
+        {
+          id: "file-1",
+          originalName: "pin-photo.jpg",
+          createdAt: "2026-06-13T12:05:00.000Z",
+        },
+      ],
+      task: {
+        id: "task-1",
+        title: "Fix issue",
+        status: "OPEN",
+      },
     });
   });
 });

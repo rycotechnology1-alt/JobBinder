@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireFileAccess = vi.fn();
 const accessErrorResponse = vi.fn();
 const fileFindFirst = vi.fn();
+const fileFindMany = vi.fn();
+const taskFindMany = vi.fn();
 const markFindMany = vi.fn();
 const markCreate = vi.fn();
 const markUpdate = vi.fn();
@@ -13,7 +15,8 @@ const transaction = vi.fn();
 vi.mock("@/lib/current-user", () => ({ requireFileAccess, accessErrorResponse }));
 vi.mock("@/lib/prisma", () => ({
   default: {
-    file: { findFirst: fileFindFirst },
+    file: { findFirst: fileFindFirst, findMany: fileFindMany },
+    task: { findMany: taskFindMany },
     fileMarkupMark: { findMany: markFindMany, create: markCreate, update: markUpdate },
     fileMarkupExport: { upsert: exportUpsert },
     $transaction: transaction,
@@ -59,6 +62,8 @@ describe("/api/files/[id]/markup", () => {
     });
     accessErrorResponse.mockReturnValue(null);
     fileFindFirst.mockResolvedValue({ id: "file-1" });
+    fileFindMany.mockResolvedValue([]);
+    taskFindMany.mockResolvedValue([]);
     markFindMany.mockResolvedValue([]);
     transaction.mockResolvedValue([]);
   });
@@ -85,6 +90,82 @@ describe("/api/files/[id]/markup", () => {
     const json = await response.json();
     expect(json.marks).toHaveLength(1);
     expect(json.marks[0]).toMatchObject({ id: "mark-1", kind: "PIN", text: "Look here" });
+  });
+
+  it("GET includes server-owned pin attachments and linked task metadata", async () => {
+    markFindMany.mockResolvedValueOnce([
+      {
+        id: "mark-1",
+        fileId: "file-1",
+        page: 1,
+        kind: "PIN",
+        geometry: { x: 0.5, y: 0.5 },
+        style: { color: "#22c55e", strokeWidth: 0.004, opacity: 1 },
+        text: "Look here",
+        sequence: 0,
+        authorId: "user-1",
+        deletedAt: null,
+        clientUpdatedAt: new Date("2026-06-13T12:00:00.000Z"),
+      },
+    ]);
+    fileFindMany.mockResolvedValueOnce([
+      {
+        id: "file-attachment",
+        type: "PHOTO",
+        originalName: "pin-photo.jpg",
+        name: null,
+        category: "Issue",
+        contentType: "image/jpeg",
+        sizeBytes: 1234,
+        markupMarkId: "mark-1",
+        createdAt: new Date("2026-06-13T12:05:00.000Z"),
+      },
+    ]);
+    taskFindMany.mockResolvedValueOnce([
+      {
+        id: "task-1",
+        title: "Fix issue",
+        status: "OPEN",
+        type: "TASK",
+        dueDate: null,
+        sourceMarkupMarkId: "mark-1",
+      },
+    ]);
+
+    const response = await getMarkup();
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(fileFindMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", markupMarkId: { in: ["mark-1"] } },
+      select: {
+        id: true,
+        type: true,
+        originalName: true,
+        name: true,
+        category: true,
+        contentType: true,
+        sizeBytes: true,
+        markupMarkId: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(taskFindMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", sourceMarkupMarkId: { in: ["mark-1"] } },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        type: true,
+        dueDate: true,
+        sourceMarkupMarkId: true,
+      },
+    });
+    expect(json.marks[0]).toMatchObject({
+      id: "mark-1",
+      attachments: [{ id: "file-attachment", originalName: "pin-photo.jpg" }],
+      task: { id: "task-1", title: "Fix issue", status: "OPEN" },
+    });
   });
 
   it("GET 404s when the file is not in the company", async () => {

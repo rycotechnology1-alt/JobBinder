@@ -1,7 +1,7 @@
 // Server-side (de)serialization and validation for markup marks. Pure
 // functions so they can be unit-tested without a database.
 
-import type { Mark, MarkKind, MarkMutation, MarkStyle } from "./types";
+import type { Mark, MarkAttachment, MarkKind, MarkMutation, MarkStyle, MarkTaskLink } from "./types";
 
 export const MARK_KINDS: MarkKind[] = ["PEN", "ELLIPSE", "ARROW", "CLOUD", "PIN"];
 
@@ -20,7 +20,31 @@ export type DbMarkRow = {
   clientUpdatedAt: Date;
 };
 
-export function serializeMark(row: DbMarkRow): Mark {
+export type DbMarkAttachmentRow = {
+  id: string;
+  type: "PHOTO" | "DOCUMENT";
+  originalName: string;
+  name: string | null;
+  category: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  createdAt: Date;
+};
+
+export type DbMarkTaskRow = {
+  id: string;
+  title: string;
+  status: "OPEN" | "IN_PROGRESS" | "DONE";
+  type: "TASK" | "PUNCH_LIST";
+  dueDate: Date | null;
+};
+
+type MarkServerMetadata = {
+  attachments?: DbMarkAttachmentRow[];
+  task?: DbMarkTaskRow | null;
+};
+
+export function serializeMark(row: DbMarkRow, metadata: MarkServerMetadata = {}): Mark {
   return {
     id: row.id,
     fileId: row.fileId,
@@ -33,7 +57,32 @@ export function serializeMark(row: DbMarkRow): Mark {
     authorId: row.authorId,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     clientUpdatedAt: row.clientUpdatedAt.toISOString(),
+    ...(metadata.attachments ? { attachments: metadata.attachments.map(serializeAttachment) } : {}),
+    ...(metadata.task !== undefined ? { task: metadata.task ? serializeTask(metadata.task) : null } : {}),
   } as Mark;
+}
+
+function serializeAttachment(row: DbMarkAttachmentRow): MarkAttachment {
+  return {
+    id: row.id,
+    type: row.type,
+    originalName: row.originalName,
+    name: row.name,
+    category: row.category,
+    contentType: row.contentType,
+    sizeBytes: row.sizeBytes,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function serializeTask(row: DbMarkTaskRow): MarkTaskLink {
+  return {
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    type: row.type,
+    dueDate: row.dueDate ? row.dueDate.toISOString() : null,
+  };
 }
 
 type ParseResult = { ok: true; mutations: MarkMutation[] } | { ok: false; error: string };

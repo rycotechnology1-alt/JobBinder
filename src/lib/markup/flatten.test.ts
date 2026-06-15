@@ -47,6 +47,27 @@ describe("flattenMarkupToPdf (PDF original)", () => {
     expect(await pageCount(out)).toBe(3); // 2 original + 1 index
   });
 
+  it("appends a comment index page when pins have image attachments", async () => {
+    const marks: Mark[] = [
+      { ...base, id: "p1", kind: "PIN", geometry: { x: 0.3, y: 0.3 }, sequence: 0 },
+    ];
+    const out = await flattenMarkupToPdf({
+      mode: "pdf",
+      baseBytes: await makeBasePdf(1),
+      marks,
+      pinAttachments: [
+        {
+          markId: "p1",
+          id: "file-1",
+          filename: "pin-photo.png",
+          contentType: "image/png",
+          bytes: PNG_1x1,
+        },
+      ],
+    });
+    expect(await pageCount(out)).toBe(2); // original + attachment/comment index
+  });
+
   it("ignores soft-deleted marks", async () => {
     const marks: Mark[] = [
       { ...base, id: "p1", kind: "PIN", geometry: { x: 0.3, y: 0.3 }, text: "Gone", sequence: 0, deletedAt: "2026-06-13T12:30:00.000Z" },

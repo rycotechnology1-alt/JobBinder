@@ -28,6 +28,14 @@ const NO_SELECT_STYLE: CSSProperties & { WebkitTouchCallout?: string } = {
   userSelect: "none",
 };
 
+function formatTaskStatus(status: string) {
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
   const store = useMarkupStore(fileId);
   const [pageNumber, setPageNumber] = useState(1);
@@ -125,7 +133,24 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
             {pinNumbers.get(activePin.id) ?? "•"}
           </div>
-          <p className="min-w-0 flex-1 text-sm text-zinc-100">{activePin.text?.trim() || <span className="text-zinc-500">No comment</span>}</p>
+          <div className="min-w-0 flex-1 space-y-2">
+            <p className="text-sm text-zinc-100">{activePin.text?.trim() || <span className="text-zinc-500">No comment</span>}</p>
+            {activePin.task && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-zinc-300">{activePin.task.title}</span>
+                <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-300">{formatTaskStatus(activePin.task.status)}</span>
+              </div>
+            )}
+            {activePin.attachments && activePin.attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {activePin.attachments.map((attachment) => (
+                  <span key={attachment.id} className="rounded-full border border-zinc-800 px-2 py-1 text-xs text-zinc-300">
+                    {attachment.name || attachment.originalName}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
           <button type="button" onClick={() => setActivePin(null)} className="text-xs text-zinc-400 hover:text-zinc-100">
             Close
           </button>

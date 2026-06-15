@@ -13,9 +13,18 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireCompanyUser();
     const body = await req.json();
-    const { jobId, createdAt } = body;
+    const { createdAt } = body;
+    let jobId = typeof body.jobId === "string" && body.jobId.trim()
+      ? body.jobId.trim()
+      : "";
     const noteId = typeof body.noteId === "string" && body.noteId.trim()
       ? body.noteId.trim()
+      : null;
+    const taskId = typeof body.taskId === "string" && body.taskId.trim()
+      ? body.taskId.trim()
+      : null;
+    const markupMarkId = typeof body.markupMarkId === "string" && body.markupMarkId.trim()
+      ? body.markupMarkId.trim()
       : null;
     const clientMutationId = typeof body.clientMutationId === "string" && body.clientMutationId.trim()
       ? body.clientMutationId.trim()
@@ -38,6 +47,50 @@ export async function POST(req: NextRequest) {
 
     if (!isCompanyScopedObjectKey(validation.value.objectKey, user.companyId)) {
       return NextResponse.json({ error: "Object key is outside company storage" }, { status: 403 });
+    }
+
+    if (taskId) {
+      const task = await prisma.task.findFirst({
+        where: {
+          id: taskId,
+          companyId: user.companyId,
+          ...(jobId ? { jobId } : {}),
+        },
+        select: { id: true, jobId: true },
+      });
+
+      if (!task) {
+        return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      }
+
+      jobId = task.jobId;
+    }
+
+    let sourceMarkupFileId: string | null = null;
+    if (markupMarkId) {
+      if (validation.value.type !== "PHOTO") {
+        return NextResponse.json({ error: "Pinned comment attachments must be images." }, { status: 400 });
+      }
+
+      const mark = await prisma.fileMarkupMark.findFirst({
+        where: { id: markupMarkId, companyId: user.companyId, deletedAt: null },
+        select: { id: true, kind: true, file: { select: { id: true, jobId: true } } },
+      });
+
+      if (!mark || mark.kind !== "PIN") {
+        return NextResponse.json({ error: "Pinned comment not found" }, { status: 404 });
+      }
+
+      if (!mark.file.jobId) {
+        return NextResponse.json({ error: "Pinned comment is not on a job" }, { status: 400 });
+      }
+
+      if (jobId && jobId !== mark.file.jobId) {
+        return NextResponse.json({ error: "Pinned comment is not on this job" }, { status: 400 });
+      }
+
+      jobId = mark.file.jobId;
+      sourceMarkupFileId = mark.file.id;
     }
 
     if (jobId) {
@@ -88,10 +141,20 @@ export async function POST(req: NextRequest) {
         contentType: validation.value.contentType,
         sizeBytes: validation.value.sizeBytes,
         ...(noteId ? { noteId } : {}),
+        ...(taskId ? { taskId } : {}),
+        ...(markupMarkId ? { markupMarkId } : {}),
         ...(clientMutationId ? { clientMutationId } : {}),
         ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
       },
     });
+
+    if (sourceMarkupFileId) {
+      await prisma.fileMarkupExport.upsert({
+        where: { fileId: sourceMarkupFileId },
+        create: { fileId: sourceMarkupFileId, isStale: true },
+        update: { isStale: true },
+      });
+    }
 
     return NextResponse.json(file, { status: 201 });
   } catch (error) {

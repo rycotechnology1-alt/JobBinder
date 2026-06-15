@@ -257,4 +257,88 @@ describe("JobFolderTabs", () => {
     expect(screen.getByText(/by Foreman/)).toBeTruthy();
     expect(screen.getByText("report-photo.jpg")).toBeTruthy();
   });
+
+  it("shows task attachments on task rows", async () => {
+    const user = userEvent.setup();
+    render(
+      <JobFolderTabs
+        notes={[]}
+        files={[]}
+        tasks={[
+          {
+            id: "task-with-file",
+            title: "Fix sill caulk",
+            description: null,
+            status: "OPEN",
+            type: "TASK",
+            priority: null,
+            dueDate: null,
+            createdAt: "2026-06-15T12:00:00.000Z",
+            files: [
+              {
+                id: "file-task-1",
+                type: "PHOTO",
+                originalName: "sill.jpg",
+                name: null,
+                category: "Issue",
+                noteId: null,
+                taskId: "task-with-file",
+                markupMarkId: null,
+                createdAt: "2026-06-15T12:05:00.000Z",
+              },
+            ],
+          },
+        ]}
+        isAdmin={false}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Tasks (1)" }));
+
+    expect(screen.getByText("Fix sill caulk")).toBeTruthy();
+    expect(screen.getByText("sill.jpg")).toBeTruthy();
+  });
+
+  it("keeps linked attachments out of the feed but visible in Files", async () => {
+    const user = userEvent.setup();
+    render(
+      <JobFolderTabs
+        notes={[]}
+        files={[
+          {
+            id: "file-standalone",
+            type: "PHOTO",
+            originalName: "overview.jpg",
+            name: null,
+            category: "Before",
+            noteId: null,
+            taskId: null,
+            markupMarkId: null,
+            createdAt: "2026-06-15T12:00:00.000Z",
+          },
+          {
+            id: "file-pin",
+            type: "PHOTO",
+            originalName: "pin-photo.jpg",
+            name: null,
+            category: "Issue",
+            noteId: null,
+            taskId: null,
+            markupMarkId: "mark-1",
+            createdAt: "2026-06-15T12:05:00.000Z",
+          },
+        ]}
+        tasks={[]}
+        isAdmin={false}
+      />,
+    );
+
+    expect(screen.getByText("overview.jpg")).toBeTruthy();
+    expect(screen.queryByText("pin-photo.jpg")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Files (2)" }));
+
+    expect(screen.getByText("overview.jpg")).toBeTruthy();
+    expect(screen.getByText("pin-photo.jpg")).toBeTruthy();
+  });
 });

@@ -31,6 +31,8 @@ type FileItem = {
   name: string | null;
   category: string | null;
   noteId: string | null;
+  taskId?: string | null;
+  markupMarkId?: string | null;
   createdAt: string;
 };
 
@@ -43,6 +45,7 @@ type TaskItem = {
   priority: number | null;
   dueDate: string | null;
   createdAt: string;
+  files?: FileItem[];
 };
 
 type Tab = "FEED" | "FILES" | "DAILY_REPORTS" | "TASKS";
@@ -370,13 +373,31 @@ function TaskRow({
             </Badge>
             {task.status === "OPEN" && <Badge>Open</Badge>}
             {task.status === "IN_PROGRESS" && <Badge variant="success">In Progress</Badge>}
-          </div>
+        </div>
           {task.description && <p className="text-sm text-zinc-500 leading-relaxed">{task.description}</p>}
           {task.dueDate && (
             <p className="mt-2 inline-flex items-center gap-1 text-xs text-zinc-500">
               <Clock3 size={13} />
               Due {new Date(task.dueDate).toLocaleDateString()}
             </p>
+          )}
+          {task.files && task.files.length > 0 && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Attachments</p>
+              <div className="space-y-2">
+                {task.files.map((file) => (
+                  <FilePreview
+                    key={file.id}
+                    fileId={file.id}
+                    type={file.type}
+                    filename={file.name || file.originalName}
+                    category={file.category}
+                    canDelete={isAdmin}
+                    onDelete={onDeleted}
+                  />
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </div>

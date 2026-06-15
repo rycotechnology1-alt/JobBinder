@@ -244,6 +244,54 @@ export class ExportJobPackageService {
       }
     }
 
+    if (includeMarkups && markupCandidates.length > 0) {
+      const sourceFolderByFileId = new Map(markupCandidates.map((candidate) => [candidate.file.id, candidate.folderPath]));
+      const pinMarks = await prisma.fileMarkupMark.findMany({
+        where: {
+          fileId: { in: markupCandidates.map((candidate) => candidate.file.id) },
+          kind: "PIN",
+          deletedAt: null,
+        },
+        select: { id: true, fileId: true },
+      });
+      const sourceFileByMarkId = new Map(pinMarks.map((mark) => [mark.id, mark.fileId]));
+      const pinMarkIds = pinMarks.map((mark) => mark.id);
+
+      if (pinMarkIds.length > 0) {
+        const alreadyIncludedFileIds = new Set(items.filter((item) => item.itemType === "FILE").map((item) => item.id));
+        const pinAttachments = await prisma.file.findMany({
+          where: {
+            companyId,
+            jobId,
+            markupMarkId: { in: pinMarkIds },
+            type: "PHOTO",
+          },
+          include: { uploader: { select: { name: true, email: true } } },
+          orderBy: { createdAt: "asc" },
+        });
+
+        for (const attachment of pinAttachments) {
+          if (!attachment.markupMarkId || alreadyIncludedFileIds.has(attachment.id)) continue;
+          const sourceFileId = sourceFileByMarkId.get(attachment.markupMarkId);
+          if (!sourceFileId) continue;
+          items.push({
+            id: `${attachment.id}-markup-attachment`,
+            category: "Markups",
+            itemType: "FILE",
+            createdAt: attachment.createdAt.toISOString(),
+            createdBy: getUserDisplayName(attachment.uploader),
+            title: attachment.name || attachment.originalName,
+            description: attachment.category || undefined,
+            originalFileName: attachment.originalName,
+            exportedFileName: "",
+            folderPath: options.groupByCategory ? (sourceFolderByFileId.get(sourceFileId) ?? "") : "",
+            storageKey: attachment.url,
+          });
+          alreadyIncludedFileIds.add(attachment.id);
+        }
+      }
+    }
+
     // 2. PROCESS NOTES
     for (const note of job.notes) {
       const noteExportDate = getNoteExportDate(note);

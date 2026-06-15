@@ -26,6 +26,8 @@ export type PreparedClientUpload = {
 type UploadFileRecordInput = {
   jobId?: string;
   noteId?: string;
+  taskId?: string;
+  markupMarkId?: string;
   originalName: string;
   name?: string;
   category: string;
@@ -152,6 +154,8 @@ export async function uploadFileRecord(input: UploadFileRecordInput) {
     body: JSON.stringify({
       jobId: input.jobId,
       noteId: input.noteId,
+      taskId: input.taskId,
+      markupMarkId: input.markupMarkId,
       objectKey: uploadUrlPayload.objectKey,
       originalName: input.originalName,
       name: input.name ?? "",

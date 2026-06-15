@@ -447,6 +447,7 @@ model File {
 
   noteId           String?
   taskId           String?
+  markupMarkId     String?
   clientMutationId String?
 
   createdAt DateTime @default(now()) // Can be set by client for offline captures
@@ -457,6 +458,7 @@ model File {
   uploader     User              @relation(fields: [uploaderId], references: [id])
   note         Note?             @relation("NoteFiles", fields: [noteId], references: [id])
   task         Task?             @relation("TaskFiles", fields: [taskId], references: [id])
+  markupMark   FileMarkupMark?   @relation("MarkupMarkFiles", fields: [markupMarkId], references: [id])
   markupMarks  FileMarkupMark[]
   markupExport FileMarkupExport?
 
@@ -493,6 +495,8 @@ model FileMarkupMark {
 
   file   File @relation(fields: [fileId], references: [id], onDelete: Cascade)
   author User @relation(fields: [authorId], references: [id])
+  files  File[] @relation("MarkupMarkFiles")
+  sourceTask Task? @relation("TaskSourceMarkupMark")
 
   @@index([fileId])
   @@index([companyId])
@@ -539,6 +543,7 @@ model Task {
 
   createdById      String
   assignedToId     String?
+  sourceMarkupMarkId String? @unique
   clientMutationId String?
 
   createdAt DateTime @default(now())
@@ -548,6 +553,7 @@ model Task {
   job        Job     @relation(fields: [jobId], references: [id])
   createdBy  User    @relation(fields: [createdById], references: [id])
   assignedTo User?   @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  sourceMarkupMark FileMarkupMark? @relation("TaskSourceMarkupMark", fields: [sourceMarkupMarkId], references: [id])
 
   files File[] @relation("TaskFiles")
 

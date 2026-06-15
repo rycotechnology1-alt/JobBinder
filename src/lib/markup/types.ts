@@ -30,6 +30,25 @@ export type MarkStyle = {
   opacity: number;
 };
 
+export type MarkAttachment = {
+  id: string;
+  type: "PHOTO" | "DOCUMENT";
+  originalName: string;
+  name: string | null;
+  category: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  createdAt: string;
+};
+
+export type MarkTaskLink = {
+  id: string;
+  title: string;
+  status: "OPEN" | "IN_PROGRESS" | "DONE";
+  type: "TASK" | "PUNCH_LIST";
+  dueDate: string | null;
+};
+
 type MarkBase = {
   id: string;
   fileId: string;
@@ -45,6 +64,10 @@ type MarkBase = {
   deletedAt?: string | null;
   /** ISO timestamp set by the client — drives per-mark last-write-wins merge. */
   clientUpdatedAt: string;
+  /** Server-owned files attached to this mark. Ignored in markup mutations. */
+  attachments?: MarkAttachment[];
+  /** Server-owned task created from this pin. Ignored in markup mutations. */
+  task?: MarkTaskLink | null;
 };
 
 export type PenMark = MarkBase & {

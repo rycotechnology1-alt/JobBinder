@@ -1,17 +1,18 @@
 "use client";
 
 // Full-screen markup editor. Composes the page surface, the interactive SVG
-// layer, and the touch-first toolbar, and owns tool/colour/page/zoom state plus
+// layer, and the touch-first toolbar, and owns tool/color/page/zoom state plus
 // an undo/redo history. Persistence goes through useMarkupStore (optimistic +
 // debounced save).
 
-import { useCallback, useState, type CSSProperties } from "react";
+import { useCallback, useState, type CSSProperties, type ChangeEvent, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronLeft, ChevronRight, Loader2, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ImagePlus, ListTodo, Loader2, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useMarkupStore, type SaveMutations } from "@/lib/markup/useMarkupStore";
 import type { Mark, MarkupTool } from "@/lib/markup/types";
 import type { Size } from "@/lib/markup/viewport";
+import { isOffline, prepareClientUploadFile, uploadFileRecord } from "@/lib/uploads/client-upload";
 import { MarkupCanvasLayer } from "./MarkupCanvasLayer";
 import { MarkupToolbar, MARKUP_COLORS, STROKE_WIDTHS } from "./MarkupToolbar";
 import { PageSurface } from "./PageSurface";
@@ -106,6 +107,7 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
     setRedoStack([...redoStack, entry]);
     setSelectedId(null);
   };
+
   const redo = () => {
     if (redoStack.length === 0) return;
     const entry = redoStack[redoStack.length - 1];
@@ -128,10 +130,10 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
     <div className="fixed inset-0 z-[140] flex select-none flex-col bg-zinc-950 text-zinc-50" style={NO_SELECT_STYLE}>
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 px-3 py-3 sm:px-5">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold sm:text-base">Marking up · {filename}</h2>
+          <h2 className="truncate text-sm font-semibold sm:text-base">Marking up - {filename}</h2>
           <p className="flex items-center gap-1.5 text-xs text-zinc-500">
             {saving ? <Loader2 className="animate-spin" size={12} /> : <Check size={12} className="text-emerald-400" />}
-            {saving ? "Saving…" : "Saved"}
+            {saving ? "Saving..." : "Saved"}
           </p>
         </div>
         <Button type="button" onClick={handleDone} className="gap-2">
@@ -177,8 +179,10 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
       {selected?.kind === "PIN" && (
         <PinCommentPanel
           key={selected.id}
-          initialText={selected.text ?? ""}
+          mark={selected}
           onCommit={(text) => commitComment(selected, text)}
+          onFlush={store.flushNow}
+          onReload={store.reload}
           onClose={() => setSelectedId(null)}
         />
       )}
@@ -186,11 +190,29 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
       <div className="flex shrink-0 items-center justify-center gap-2 border-t border-zinc-800 bg-zinc-950/80 px-3 py-1.5">
         {mode === "pdf" && (
           <>
-            <button type="button" aria-label="Previous page" disabled={pageNumber <= 1} onClick={() => { setSelectedId(null); setPageNumber((p) => p - 1); }} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40">
+            <button
+              type="button"
+              aria-label="Previous page"
+              disabled={pageNumber <= 1}
+              onClick={() => {
+                setSelectedId(null);
+                setPageNumber((p) => p - 1);
+              }}
+              className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+            >
               <ChevronLeft size={18} />
             </button>
-            <span className="text-xs text-zinc-400">Page {pageNumber} / {numPages || "…"}</span>
-            <button type="button" aria-label="Next page" disabled={pageNumber >= numPages} onClick={() => { setSelectedId(null); setPageNumber((p) => p + 1); }} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40">
+            <span className="text-xs text-zinc-400">Page {pageNumber} / {numPages || "..."}</span>
+            <button
+              type="button"
+              aria-label="Next page"
+              disabled={pageNumber >= numPages}
+              onClick={() => {
+                setSelectedId(null);
+                setPageNumber((p) => p + 1);
+              }}
+              className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+            >
               <ChevronRight size={18} />
             </button>
             <div className="mx-1 h-5 w-px bg-zinc-800" />
@@ -227,25 +249,231 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
   );
 }
 
+type PinCommentPanelProps = {
+  mark: Mark;
+  onCommit: (text: string) => void;
+  onFlush: () => Promise<void>;
+  onReload: () => Promise<void>;
+  onClose: () => void;
+};
+
 // Keyed by pin id so it re-initializes per pin without a syncing effect.
-function PinCommentPanel({ initialText, onCommit, onClose }: { initialText: string; onCommit: (text: string) => void; onClose: () => void }) {
-  const [text, setText] = useState(initialText);
+function PinCommentPanel({ mark, onCommit, onFlush, onReload, onClose }: PinCommentPanelProps) {
+  const [text, setText] = useState(mark.text ?? "");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [taskFormOpen, setTaskFormOpen] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const [taskTitle, setTaskTitle] = useState((mark.text ?? "").trim() || "Pinned comment follow-up");
+  const [taskType, setTaskType] = useState<"TASK" | "PUNCH_LIST">("TASK");
+  const [dueDate, setDueDate] = useState("");
+  const attachments = mark.attachments ?? [];
+  const hasTask = Boolean(mark.task);
+
+  async function attachImages(files: FileList | File[]) {
+    const selectedFiles = Array.from(files).filter(Boolean);
+    if (selectedFiles.length === 0) return;
+    setError("");
+    setStatus("");
+
+    if (isOffline()) {
+      setError("Connect to upload pin images.");
+      return;
+    }
+
+    const invalid = selectedFiles.find((file) => !file.type.startsWith("image/"));
+    if (invalid) {
+      setError("Pin attachments must be images.");
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      onCommit(text);
+      await onFlush();
+      for (const file of selectedFiles) {
+        const prepared = await prepareClientUploadFile(file, setStatus);
+        await uploadFileRecord({
+          markupMarkId: mark.id,
+          originalName: prepared.sourceFile.name,
+          name: "",
+          category: "Issue",
+          prepared,
+          onStatus: setStatus,
+        });
+      }
+      setStatus("");
+      await onReload();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Could not upload pin image.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function handleAttachChange(event: ChangeEvent<HTMLInputElement>) {
+    void attachImages(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+  }
+
+  async function createLinkedTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setStatus("");
+
+    if (isOffline()) {
+      setError("Connect to create a task from this pin.");
+      return;
+    }
+
+    const trimmedText = text.trim();
+    const trimmedTitle = taskTitle.trim() || trimmedText || "Pinned comment follow-up";
+    setIsBusy(true);
+    try {
+      onCommit(text);
+      await onFlush();
+      const response = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceMarkupMarkId: mark.id,
+          title: trimmedTitle,
+          description: trimmedText,
+          type: taskType,
+          dueDate,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Could not create linked task.");
+      }
+      setTaskFormOpen(false);
+      await onReload();
+    } catch (taskError) {
+      setError(taskError instanceof Error ? taskError.message : "Could not create linked task.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   return (
-    <div className="flex shrink-0 items-end gap-2 border-t border-zinc-800 bg-zinc-950/95 px-3 py-2">
-      <label className="flex-1">
-        <span className="mb-1 block text-xs text-zinc-400">Pin comment</span>
-        <textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onBlur={() => onCommit(text)}
-          rows={2}
-          placeholder="Add a note for this pin…"
-          className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand"
-        />
-      </label>
-      <Button type="button" variant="secondary" onClick={() => { onCommit(text); onClose(); }}>
-        Done
-      </Button>
+    <div className="shrink-0 border-t border-zinc-800 bg-zinc-950/95 px-3 py-2">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
+        <label className="min-w-0 flex-1">
+          <span className="mb-1 block text-xs text-zinc-400">Pin comment</span>
+          <textarea
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value);
+              if (!taskFormOpen) setTaskTitle(event.target.value.trim() || "Pinned comment follow-up");
+            }}
+            onBlur={() => onCommit(text)}
+            rows={2}
+            placeholder="Add a note for this pin..."
+            className="w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-brand"
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 text-sm font-medium text-zinc-300 transition-all hover:bg-zinc-800">
+            <ImagePlus size={16} />
+            Attach image
+            <input
+              aria-label="Attach image"
+              type="file"
+              accept="image/*"
+              multiple
+              className="sr-only"
+              disabled={isBusy}
+              onChange={handleAttachChange}
+            />
+          </label>
+          <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 text-sm font-medium text-zinc-300 transition-all hover:bg-zinc-800 sm:hidden">
+            <ImagePlus size={16} />
+            Take photo
+            <input
+              aria-label="Take photo"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              disabled={isBusy}
+              onChange={handleAttachChange}
+            />
+          </label>
+          {hasTask ? (
+            <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-emerald-500/40 px-3 text-sm text-emerald-200">
+              <ListTodo size={16} />
+              {mark.task?.status.replace("_", " ")}
+            </span>
+          ) : (
+            <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => setTaskFormOpen((open) => !open)}>
+              <ListTodo size={16} />
+              Create task
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => {
+              onCommit(text);
+              onClose();
+            }}
+          >
+            Done
+          </Button>
+        </div>
+      </div>
+
+      {(attachments.length > 0 || status || error) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          {attachments.map((attachment) => (
+            <span key={attachment.id} className="inline-flex max-w-56 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 text-zinc-300">
+              <ImagePlus size={14} className="shrink-0 text-zinc-500" />
+              <span className="truncate">{attachment.name || attachment.originalName}</span>
+            </span>
+          ))}
+          {status && <span className="text-zinc-400">{status}</span>}
+          {error && <span className="text-red-300">{error}</span>}
+        </div>
+      )}
+
+      {taskFormOpen && !hasTask && (
+        <form onSubmit={createLinkedTask} className="mt-3 grid gap-2 rounded-lg border border-zinc-800 bg-zinc-900/70 p-3 sm:grid-cols-[minmax(0,1fr)_160px_150px_auto] sm:items-end">
+          <label className="min-w-0">
+            <span className="mb-1 block text-xs text-zinc-400">Task title</span>
+            <input
+              value={taskTitle}
+              onChange={(event) => setTaskTitle(event.target.value)}
+              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 outline-none focus:border-brand"
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-xs text-zinc-400">Type</span>
+            <select
+              value={taskType}
+              onChange={(event) => setTaskType(event.target.value as "TASK" | "PUNCH_LIST")}
+              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 outline-none focus:border-brand"
+            >
+              <option value="TASK">Task</option>
+              <option value="PUNCH_LIST">Punch list</option>
+            </select>
+          </label>
+          <label>
+            <span className="mb-1 block text-xs text-zinc-400">Due date</span>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(event) => setDueDate(event.target.value)}
+              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 outline-none focus:border-brand"
+            />
+          </label>
+          <Button type="submit" size="sm" disabled={isBusy}>
+            Create linked task
+          </Button>
+        </form>
+      )}
     </div>
   );
 }

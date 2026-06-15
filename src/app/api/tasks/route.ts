@@ -12,12 +12,45 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireCompanyUser();
     const body = await req.json();
-    const { jobId, title, description, type, dueDate, assignedToId, createdAt } = body;
+    const { title, description, type, dueDate, assignedToId, createdAt } = body;
+    let jobId = typeof body.jobId === "string" && body.jobId.trim() ? body.jobId.trim() : "";
+    const sourceMarkupMarkId = typeof body.sourceMarkupMarkId === "string" && body.sourceMarkupMarkId.trim()
+      ? body.sourceMarkupMarkId.trim()
+      : null;
     const normalizedTitle = typeof title === "string" ? title.trim() : "";
     const normalizedType = type === undefined || type === null || type === "" ? "TASK" : type;
     const clientMutationId = typeof body.clientMutationId === "string" && body.clientMutationId.trim()
       ? body.clientMutationId.trim()
       : null;
+
+    if (sourceMarkupMarkId) {
+      const existingSourceTask = await prisma.task.findFirst({
+        where: { companyId: user.companyId, sourceMarkupMarkId },
+      });
+
+      if (existingSourceTask) {
+        return NextResponse.json(existingSourceTask);
+      }
+
+      const sourceMark = await prisma.fileMarkupMark.findFirst({
+        where: { id: sourceMarkupMarkId, companyId: user.companyId, kind: "PIN", deletedAt: null },
+        select: { id: true, file: { select: { id: true, jobId: true } } },
+      });
+
+      if (!sourceMark) {
+        return NextResponse.json({ error: "Pinned comment not found" }, { status: 404 });
+      }
+
+      if (!sourceMark.file.jobId) {
+        return NextResponse.json({ error: "Pinned comment is not on a job" }, { status: 400 });
+      }
+
+      if (jobId && jobId !== sourceMark.file.jobId) {
+        return NextResponse.json({ error: "Pinned comment is not on this job" }, { status: 400 });
+      }
+
+      jobId = sourceMark.file.jobId;
+    }
 
     if (!jobId || !normalizedTitle) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -76,10 +109,18 @@ export async function POST(req: NextRequest) {
         dueDate: dueDate ? new Date(dueDate) : null,
         createdById: user.id,
         assignedToId,
+        ...(sourceMarkupMarkId ? { sourceMarkupMarkId } : {}),
         ...(clientMutationId ? { clientMutationId } : {}),
         ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
       },
     });
+
+    if (sourceMarkupMarkId) {
+      await prisma.file.updateMany({
+        where: { companyId: user.companyId, markupMarkId: sourceMarkupMarkId },
+        data: { taskId: task.id },
+      });
+    }
 
     return NextResponse.json(task, { status: 201 });
   } catch (error) {

@@ -12,6 +12,14 @@ const offlineQueueMocks = vi.hoisted(() => ({
   queueOfflineTask: vi.fn(),
   queueOfflineDailyReport: vi.fn(),
 }));
+const uploadMocks = vi.hoisted(() => ({
+  prepareClientUploadFile: vi.fn(async (file: File) => ({
+    sourceFile: file,
+    body: file,
+    contentType: file.type,
+  })),
+  uploadFileRecord: vi.fn(async () => ({ id: "file-created" })),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -30,6 +38,15 @@ vi.mock("@/lib/offline-sync/queue", () => ({
   queueOfflineDailyReport: offlineQueueMocks.queueOfflineDailyReport,
 }));
 
+vi.mock("@/lib/uploads/client-upload", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/uploads/client-upload")>();
+  return {
+    ...actual,
+    prepareClientUploadFile: uploadMocks.prepareClientUploadFile,
+    uploadFileRecord: uploadMocks.uploadFileRecord,
+  };
+});
+
 describe("JobActions", () => {
   beforeEach(() => {
     refresh.mockClear();
@@ -37,6 +54,8 @@ describe("JobActions", () => {
     offlineQueueMocks.queueOfflineNote.mockReset();
     offlineQueueMocks.queueOfflineTask.mockReset();
     offlineQueueMocks.queueOfflineDailyReport.mockReset();
+    uploadMocks.prepareClientUploadFile.mockClear();
+    uploadMocks.uploadFileRecord.mockClear();
     offlineQueueMocks.queueOfflineNote.mockResolvedValue({ id: "queued-note" });
     offlineQueueMocks.queueOfflineTask.mockResolvedValue({ id: "queued-task" });
     offlineQueueMocks.queueOfflineDailyReport.mockResolvedValue({ id: "queued-report" });
@@ -142,6 +161,52 @@ describe("JobActions", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
+  it("uploads selected files after creating a quick task", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: "task-created" }),
+    } as Response);
+    render(<JobActions jobId="job-1" />);
+
+    await user.click(screen.getByRole("button", { name: /Quick Task/i }));
+    await user.type(screen.getByLabelText("Title *"), "Fix sill caulk");
+
+    const fileInput = screen.getByLabelText("Attach files or photos") as HTMLInputElement;
+    const photo = new File(["photo"], "sill.jpg", { type: "image/jpeg" });
+    const spec = new File(["spec"], "detail.pdf", { type: "application/pdf" });
+    Object.defineProperty(fileInput, "files", {
+      value: [photo, spec],
+      configurable: true,
+    });
+    fireEvent.change(fileInput);
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(uploadMocks.uploadFileRecord).toHaveBeenCalledTimes(2);
+    });
+    expect(uploadMocks.uploadFileRecord).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        jobId: "job-1",
+        taskId: "task-created",
+        originalName: "sill.jpg",
+        category: "Misc",
+      }),
+    );
+    expect(uploadMocks.uploadFileRecord).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        jobId: "job-1",
+        taskId: "task-created",
+        originalName: "detail.pdf",
+        category: "Misc",
+      }),
+    );
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it("requires a quick-add title and shows API errors", async () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
@@ -232,6 +297,27 @@ describe("JobActions", () => {
         dueDate: "",
       });
     });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps quick task attachments online-only", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const user = userEvent.setup();
+    render(<JobActions jobId="job-1" />);
+
+    await user.click(screen.getByRole("button", { name: /Quick Task/i }));
+    await user.type(screen.getByLabelText("Title *"), "Fix sill caulk");
+    const fileInput = screen.getByLabelText("Attach files or photos") as HTMLInputElement;
+    const photo = new File(["photo"], "sill.jpg", { type: "image/jpeg" });
+    Object.defineProperty(fileInput, "files", {
+      value: [photo],
+      configurable: true,
+    });
+    fireEvent.change(fileInput);
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByText("Connect to upload task attachments.")).toBeTruthy();
+    expect(offlineQueueMocks.queueOfflineTask).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
 

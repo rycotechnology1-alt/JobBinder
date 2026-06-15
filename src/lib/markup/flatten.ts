@@ -17,6 +17,15 @@ export type FlattenInput = {
   baseBytes: Uint8Array;
   imageContentType?: string | null;
   marks: Mark[];
+  pinAttachments?: FlattenPinAttachment[];
+};
+
+export type FlattenPinAttachment = {
+  markId: string;
+  id: string;
+  filename: string;
+  contentType?: string | null;
+  bytes?: Uint8Array;
 };
 
 const INDEX_PAGE = { width: 612, height: 792 }; // US Letter
@@ -24,6 +33,7 @@ const INDEX_PAGE = { width: 612, height: 792 }; // US Letter
 export async function flattenMarkupToPdf(input: FlattenInput): Promise<Uint8Array> {
   const marks = input.marks.filter((m) => !m.deletedAt);
   const pinNumbers = numberPins(marks);
+  const attachmentsByMark = groupPinAttachments(input.pinAttachments ?? []);
 
   const doc = input.mode === "pdf" ? await PDFDocument.load(input.baseBytes) : await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -42,11 +52,21 @@ export async function flattenMarkupToPdf(input: FlattenInput): Promise<Uint8Arra
   }
 
   const commented = marks
-    .filter((m) => m.kind === "PIN" && m.text && m.text.trim())
+    .filter((m) => m.kind === "PIN" && ((m.text && m.text.trim()) || (attachmentsByMark.get(m.id)?.length ?? 0) > 0))
     .sort((a, b) => (pinNumbers.get(a.id) ?? 0) - (pinNumbers.get(b.id) ?? 0));
-  if (commented.length > 0) drawCommentIndex(doc, commented, pinNumbers, font, boldFont);
+  if (commented.length > 0) await drawCommentIndex(doc, commented, pinNumbers, font, boldFont, attachmentsByMark);
 
   return doc.save();
+}
+
+function groupPinAttachments(attachments: FlattenPinAttachment[]) {
+  const map = new Map<string, FlattenPinAttachment[]>();
+  for (const attachment of attachments) {
+    const list = map.get(attachment.markId) ?? [];
+    list.push(attachment);
+    map.set(attachment.markId, list);
+  }
+  return map;
 }
 
 function numberPins(marks: Mark[]): Map<string, number> {
@@ -114,12 +134,13 @@ function drawMark(page: PDFPage, mark: Mark, font: PDFFont, pinNumber: number | 
   }
 }
 
-function drawCommentIndex(
+async function drawCommentIndex(
   doc: PDFDocument,
   pins: Mark[],
   pinNumbers: Map<string, number>,
   font: PDFFont,
   boldFont: PDFFont,
+  attachmentsByMark: Map<string, FlattenPinAttachment[]>,
 ) {
   const margin = 56;
   const fontSize = 11;
@@ -133,17 +154,74 @@ function drawCommentIndex(
 
   for (const pin of pins) {
     const number = String(pinNumbers.get(pin.id) ?? "");
-    const lines = wrapText(pin.text?.trim() ?? "", font, fontSize, maxWidth);
+    const lines = pin.text?.trim() ? wrapText(pin.text.trim(), font, fontSize, maxWidth) : [];
+    const attachments = attachmentsByMark.get(pin.id) ?? [];
     const blockHeight = Math.max(lineHeight, lines.length * lineHeight);
     if (y - blockHeight < margin) {
       page = doc.addPage([INDEX_PAGE.width, INDEX_PAGE.height]);
       y = INDEX_PAGE.height - margin;
     }
     page.drawText(`${number}.`, { x: margin, y, size: fontSize, font: boldFont, color: rgb(0.1, 0.1, 0.1) });
+    if (lines.length === 0) {
+      page.drawText("Attached image", { x: margin + 24, y, size: fontSize, font, color: rgb(0.35, 0.35, 0.35) });
+      y -= lineHeight;
+    }
     lines.forEach((line, i) => {
       page.drawText(line, { x: margin + 24, y: y - i * lineHeight, size: fontSize, font, color: rgb(0.2, 0.2, 0.2) });
     });
-    y -= blockHeight + 6;
+    if (lines.length > 0) y -= blockHeight + 6;
+
+    for (const attachment of attachments) {
+      if (y - 116 < margin) {
+        page = doc.addPage([INDEX_PAGE.width, INDEX_PAGE.height]);
+        y = INDEX_PAGE.height - margin;
+      }
+
+      page.drawText(attachment.filename, {
+        x: margin + 24,
+        y,
+        size: 9,
+        font: boldFont,
+        color: rgb(0.25, 0.25, 0.25),
+      });
+      y -= 12;
+
+      const image = await tryEmbedAttachmentImage(doc, attachment);
+      if (image) {
+        const maxWidth = 128;
+        const maxHeight = 96;
+        const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        page.drawImage(image, {
+          x: margin + 24,
+          y: y - height,
+          width,
+          height,
+        });
+        y -= height + 10;
+      } else {
+        page.drawText("Preview unavailable for this attachment.", {
+          x: margin + 24,
+          y,
+          size: 8,
+          font,
+          color: rgb(0.45, 0.45, 0.45),
+        });
+        y -= 14;
+      }
+    }
+
+    y -= 6;
+  }
+}
+
+async function tryEmbedAttachmentImage(doc: PDFDocument, attachment: FlattenPinAttachment) {
+  if (!attachment.bytes) return null;
+  try {
+    return await embedImage(doc, attachment.bytes, attachment.contentType);
+  } catch {
+    return null;
   }
 }
 

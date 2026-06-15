@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { accessErrorResponse, requireFileAccess } from "@/lib/current-user";
-import { parseMarkMutations, serializeMark, type DbMarkRow } from "@/lib/markup/serialize";
+import {
+  parseMarkMutations,
+  serializeMark,
+  type DbMarkAttachmentRow,
+  type DbMarkRow,
+  type DbMarkTaskRow,
+} from "@/lib/markup/serialize";
 
 async function findCompanyFile(id: string, companyId: string) {
   return prisma.file.findFirst({
@@ -11,12 +17,62 @@ async function findCompanyFile(id: string, companyId: string) {
   });
 }
 
-async function loadMarks(fileId: string) {
+async function loadMarks(fileId: string, companyId: string) {
   const rows = (await prisma.fileMarkupMark.findMany({
     where: { fileId, deletedAt: null },
     orderBy: { sequence: "asc" },
   })) as DbMarkRow[];
-  return rows.map(serializeMark);
+  const markIds = rows.map((row) => row.id);
+  if (markIds.length === 0) return [];
+
+  const [attachments, tasks] = await Promise.all([
+    prisma.file.findMany({
+      where: { companyId, markupMarkId: { in: markIds } },
+      select: {
+        id: true,
+        type: true,
+        originalName: true,
+        name: true,
+        category: true,
+        contentType: true,
+        sizeBytes: true,
+        markupMarkId: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.task.findMany({
+      where: { companyId, sourceMarkupMarkId: { in: markIds } },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        type: true,
+        dueDate: true,
+        sourceMarkupMarkId: true,
+      },
+    }),
+  ]);
+
+  const attachmentsByMark = new Map<string, DbMarkAttachmentRow[]>();
+  for (const attachment of attachments) {
+    if (!attachment.markupMarkId) continue;
+    const list = attachmentsByMark.get(attachment.markupMarkId) ?? [];
+    list.push(attachment as DbMarkAttachmentRow);
+    attachmentsByMark.set(attachment.markupMarkId, list);
+  }
+
+  const taskByMark = new Map<string, DbMarkTaskRow>();
+  for (const task of tasks) {
+    if (task.sourceMarkupMarkId) taskByMark.set(task.sourceMarkupMarkId, task as DbMarkTaskRow);
+  }
+
+  return rows.map((row) =>
+    serializeMark(row, {
+      attachments: attachmentsByMark.get(row.id) ?? [],
+      task: taskByMark.get(row.id) ?? null,
+    }),
+  );
 }
 
 export async function GET(
@@ -29,7 +85,7 @@ export async function GET(
     const file = await findCompanyFile(id, user.companyId);
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
-    return NextResponse.json({ marks: await loadMarks(file.id) });
+    return NextResponse.json({ marks: await loadMarks(file.id, user.companyId) });
   } catch (error) {
     const authResponse = accessErrorResponse(error);
     if (authResponse) return authResponse;

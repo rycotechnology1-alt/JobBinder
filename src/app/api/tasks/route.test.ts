@@ -8,6 +8,8 @@ const companyMembershipFindFirst = vi.fn();
 const taskFindFirst = vi.fn();
 const taskCreate = vi.fn();
 const taskUpdate = vi.fn();
+const taskFileUpdateMany = vi.fn();
+const markupMarkFindFirst = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
   requireCompanyUser,
@@ -26,6 +28,12 @@ vi.mock("@/lib/prisma", () => ({
       findFirst: taskFindFirst,
       create: taskCreate,
       update: taskUpdate,
+    },
+    file: {
+      updateMany: taskFileUpdateMany,
+    },
+    fileMarkupMark: {
+      findFirst: markupMarkFindFirst,
     },
   },
 }));
@@ -48,7 +56,7 @@ async function patchTask(body: unknown) {
 
 describe("/api/tasks", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     requireCompanyUser.mockResolvedValue({
       id: "user-1",
       companyId: "company-1",
@@ -70,6 +78,12 @@ describe("/api/tasks", () => {
     taskUpdate.mockResolvedValue({
       id: "task-1",
       status: "IN_PROGRESS",
+    });
+    taskFileUpdateMany.mockResolvedValue({ count: 1 });
+    markupMarkFindFirst.mockResolvedValue({
+      id: "mark-1",
+      kind: "PIN",
+      file: { id: "file-1", jobId: "job-1" },
     });
   });
 
@@ -142,6 +156,61 @@ describe("/api/tasks", () => {
         clientMutationId: "offline-2",
       }),
     });
+  });
+
+  it("creates a linked task from a pinned markup comment and links existing pin images", async () => {
+    taskFindFirst.mockResolvedValueOnce(null);
+    taskCreate.mockResolvedValueOnce({
+      id: "task-from-pin",
+      title: "Fix missing caulk",
+      type: "TASK",
+      status: "OPEN",
+      sourceMarkupMarkId: "mark-1",
+    });
+
+    const response = await postTask({
+      sourceMarkupMarkId: "mark-1",
+      title: "Fix missing caulk",
+      description: "Pin 1: missing caulk at sill",
+      type: "TASK",
+      dueDate: "2026-06-20",
+    });
+
+    expect(response.status).toBe(201);
+    expect(markupMarkFindFirst).toHaveBeenCalledWith({
+      where: { id: "mark-1", companyId: "company-1", kind: "PIN", deletedAt: null },
+      select: { id: true, file: { select: { id: true, jobId: true } } },
+    });
+    expect(jobFindFirst).toHaveBeenCalledWith({
+      where: { id: "job-1", companyId: "company-1" },
+      select: { id: true },
+    });
+    expect(taskCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyId: "company-1",
+        jobId: "job-1",
+        title: "Fix missing caulk",
+        sourceMarkupMarkId: "mark-1",
+      }),
+    });
+    expect(taskFileUpdateMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", markupMarkId: "mark-1" },
+      data: { taskId: "task-from-pin" },
+    });
+  });
+
+  it("returns an existing source-pin task instead of creating a duplicate", async () => {
+    taskFindFirst.mockResolvedValueOnce({ id: "task-existing", sourceMarkupMarkId: "mark-1" });
+
+    const response = await postTask({
+      sourceMarkupMarkId: "mark-1",
+      title: "Fix missing caulk",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: "task-existing", sourceMarkupMarkId: "mark-1" });
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(taskFileUpdateMany).not.toHaveBeenCalled();
   });
 
   it("rejects invalid create payloads and unknown jobs", async () => {

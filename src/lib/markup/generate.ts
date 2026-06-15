@@ -5,7 +5,7 @@
 import prisma from "@/lib/prisma";
 import { downloadR2Object, uploadR2Object } from "@/lib/r2";
 import { getFilePreviewInfo } from "@/lib/file-preview";
-import { flattenMarkupToPdf } from "@/lib/markup/flatten";
+import { flattenMarkupToPdf, type FlattenPinAttachment } from "@/lib/markup/flatten";
 import { serializeMark, type DbMarkRow } from "@/lib/markup/serialize";
 
 export type MarkupSourceFile = {
@@ -49,11 +49,13 @@ export async function ensureFileMarkupPdf(params: {
   })) as DbMarkRow[];
 
   const baseBytes = await downloadR2Object(file.url);
+  const pinAttachments = await loadPinAttachments(rows, companyId);
   const pdfBytes = await flattenMarkupToPdf({
     mode: renderMode,
     baseBytes,
     imageContentType: contentType,
-    marks: rows.map(serializeMark),
+    marks: rows.map((row) => serializeMark(row)),
+    pinAttachments,
   });
 
   const storageKey = `${companyId}/${file.id}-markup.pdf`;
@@ -65,4 +67,46 @@ export async function ensureFileMarkupPdf(params: {
   });
 
   return { storageKey };
+}
+
+async function loadPinAttachments(rows: DbMarkRow[], companyId: string): Promise<FlattenPinAttachment[]> {
+  const pinMarkIds = rows.filter((row) => row.kind === "PIN").map((row) => row.id);
+  if (pinMarkIds.length === 0) return [];
+
+  const files = await prisma.file.findMany({
+    where: {
+      companyId,
+      markupMarkId: { in: pinMarkIds },
+      type: "PHOTO",
+    },
+    select: {
+      id: true,
+      markupMarkId: true,
+      originalName: true,
+      name: true,
+      contentType: true,
+      url: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return Promise.all(
+    files
+      .filter((attachment) => attachment.markupMarkId)
+      .map(async (attachment) => {
+        let bytes: Uint8Array | undefined;
+        try {
+          bytes = await downloadR2Object(attachment.url);
+        } catch {
+          bytes = undefined;
+        }
+        return {
+          markId: attachment.markupMarkId!,
+          id: attachment.id,
+          filename: attachment.name?.trim() || attachment.originalName,
+          contentType: attachment.contentType,
+          bytes,
+        };
+      }),
+  );
 }

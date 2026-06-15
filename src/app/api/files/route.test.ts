@@ -8,6 +8,9 @@ const fileFindFirst = vi.fn();
 const fileUpdate = vi.fn();
 const fileCreate = vi.fn();
 const noteFindFirst = vi.fn();
+const taskFindFirst = vi.fn();
+const markupMarkFindFirst = vi.fn();
+const markupExportUpsert = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
   requireCompanyUser,
@@ -26,6 +29,15 @@ vi.mock("@/lib/prisma", () => ({
     },
     note: {
       findFirst: noteFindFirst,
+    },
+    task: {
+      findFirst: taskFindFirst,
+    },
+    fileMarkupMark: {
+      findFirst: markupMarkFindFirst,
+    },
+    fileMarkupExport: {
+      upsert: markupExportUpsert,
     },
   },
 }));
@@ -52,7 +64,7 @@ async function postFile(body: unknown) {
 
 describe("PATCH /api/files", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     requireCompanyUser.mockResolvedValue({
       id: "user-1",
       companyId: "company-1",
@@ -106,7 +118,7 @@ describe("PATCH /api/files", () => {
 
 describe("POST /api/files", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     requireCompanyUser.mockResolvedValue({
       id: "user-1",
       companyId: "company-1",
@@ -120,6 +132,13 @@ describe("POST /api/files", () => {
     fileFindFirst.mockResolvedValue(null);
     fileCreate.mockResolvedValue({ id: "file-created", clientMutationId: "offline-1" });
     noteFindFirst.mockResolvedValue({ id: "report-1", jobId: "job-1" });
+    taskFindFirst.mockResolvedValue({ id: "task-1", jobId: "job-1" });
+    markupMarkFindFirst.mockResolvedValue({
+      id: "mark-1",
+      kind: "PIN",
+      file: { id: "source-file", jobId: "job-1" },
+    });
+    markupExportUpsert.mockResolvedValue({ id: "markup-export" });
   });
 
   it("returns an existing file for a repeated offline clientMutationId", async () => {
@@ -211,6 +230,88 @@ describe("POST /api/files", () => {
         noteId: "report-1",
       }),
     });
+  });
+
+  it("links uploads to a task and pinned markup comment on the same job", async () => {
+    const response = await postFile({
+      jobId: "job-1",
+      taskId: "task-1",
+      markupMarkId: "mark-1",
+      objectKey: "company-1/pin-photo.jpg",
+      originalName: "pin-photo.jpg",
+      contentType: "image/jpeg",
+      category: "Issue",
+    });
+
+    expect(response.status).toBe(201);
+    expect(taskFindFirst).toHaveBeenCalledWith({
+      where: { id: "task-1", companyId: "company-1", jobId: "job-1" },
+      select: { id: true, jobId: true },
+    });
+    expect(markupMarkFindFirst).toHaveBeenCalledWith({
+      where: { id: "mark-1", companyId: "company-1", deletedAt: null },
+      select: { id: true, kind: true, file: { select: { id: true, jobId: true } } },
+    });
+    expect(fileCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        jobId: "job-1",
+        taskId: "task-1",
+        markupMarkId: "mark-1",
+      }),
+    });
+    expect(markupExportUpsert).toHaveBeenCalledWith({
+      where: { fileId: "source-file" },
+      create: { fileId: "source-file", isStale: true },
+      update: { isStale: true },
+    });
+  });
+
+  it("rejects task and pin links that are not on the target job", async () => {
+    taskFindFirst.mockResolvedValueOnce(null);
+    const missingTask = await postFile({
+      jobId: "job-1",
+      taskId: "other-task",
+      objectKey: "company-1/photo.jpg",
+      originalName: "photo.jpg",
+      contentType: "image/jpeg",
+      category: "Misc",
+    });
+
+    expect(missingTask.status).toBe(404);
+    expect(await missingTask.json()).toEqual({ error: "Task not found" });
+
+    markupMarkFindFirst.mockResolvedValueOnce({
+      id: "mark-2",
+      kind: "PIN",
+      file: { id: "source-file-2", jobId: "other-job" },
+    });
+    const mismatchedPin = await postFile({
+      jobId: "job-1",
+      markupMarkId: "mark-2",
+      objectKey: "company-1/photo.jpg",
+      originalName: "photo.jpg",
+      contentType: "image/jpeg",
+      category: "Misc",
+    });
+
+    expect(mismatchedPin.status).toBe(400);
+    expect(await mismatchedPin.json()).toEqual({ error: "Pinned comment is not on this job" });
+    expect(fileCreate).not.toHaveBeenCalled();
+  });
+
+  it("allows only photo uploads as pinned comment attachments", async () => {
+    const response = await postFile({
+      jobId: "job-1",
+      markupMarkId: "mark-1",
+      objectKey: "company-1/spec.pdf",
+      originalName: "spec.pdf",
+      contentType: "application/pdf",
+      category: "Plans",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Pinned comment attachments must be images." });
+    expect(fileCreate).not.toHaveBeenCalled();
   });
 
   it("rejects a noteId that is not on the same company job", async () => {

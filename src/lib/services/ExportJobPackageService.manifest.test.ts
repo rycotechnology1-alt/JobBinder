@@ -4,12 +4,14 @@ const prismaMocks = vi.hoisted(() => ({
   jobFindFirst: vi.fn(),
   userFindUnique: vi.fn(),
   fileMarkupFindMany: vi.fn(),
+  fileFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   default: {
     job: { findFirst: prismaMocks.jobFindFirst },
     user: { findUnique: prismaMocks.userFindUnique },
+    file: { findMany: prismaMocks.fileFindMany },
     fileMarkupMark: { findMany: prismaMocks.fileMarkupFindMany },
   },
 }));
@@ -24,6 +26,7 @@ describe("ExportJobPackageService manifest daily reports", () => {
     vi.clearAllMocks();
     prismaMocks.userFindUnique.mockResolvedValue({ name: "Admin", email: "admin@example.com" });
     prismaMocks.fileMarkupFindMany.mockResolvedValue([]);
+    prismaMocks.fileFindMany.mockResolvedValue([]);
   });
 
   it("classifies daily reports and linked attachments by report date", async () => {
@@ -104,5 +107,81 @@ describe("ExportJobPackageService manifest daily reports", () => {
       ["legacy-progress-1", "Daily Reports", "04 - Daily Reports", "2026-06-14T18:00:00.000Z"],
       ["report-1", "Daily Reports", "04 - Daily Reports", "2026-06-14T00:00:00.000Z"],
     ]);
+  });
+
+  it("includes original pin attachments beside markup exports when only markups are selected", async () => {
+    const { ensureFileMarkupPdf } = await import("@/lib/markup/generate");
+    vi.mocked(ensureFileMarkupPdf).mockResolvedValue({ storageKey: "company/source-markup.pdf" });
+    const { ExportJobPackageService } = await import("./ExportJobPackageService");
+    prismaMocks.jobFindFirst.mockResolvedValue({
+      id: "job-1",
+      title: "Main Street",
+      jobNumber: null,
+      poNumber: null,
+      customerName: null,
+      status: "ACTIVE",
+      createdAt: new Date("2026-05-01T12:00:00.000Z"),
+      files: [
+        {
+          id: "source-1",
+          type: "DOCUMENT",
+          noteId: null,
+          taskId: null,
+          category: "Plans",
+          createdAt: new Date("2026-06-15T12:00:00.000Z"),
+          uploader: { name: "Foreman", email: "foreman@example.com" },
+          name: null,
+          originalName: "Plan.pdf",
+          url: "company/plan.pdf",
+          contentType: "application/pdf",
+        },
+      ],
+      notes: [],
+      tasks: [],
+    });
+    prismaMocks.fileMarkupFindMany
+      .mockResolvedValueOnce([{ fileId: "source-1" }])
+      .mockResolvedValueOnce([{ id: "mark-1", fileId: "source-1" }]);
+    prismaMocks.fileFindMany.mockResolvedValueOnce([
+      {
+        id: "attachment-1",
+        markupMarkId: "mark-1",
+        type: "PHOTO",
+        noteId: null,
+        taskId: null,
+        category: "Issue",
+        createdAt: new Date("2026-06-15T12:30:00.000Z"),
+        uploader: { name: "Foreman", email: "foreman@example.com" },
+        name: null,
+        originalName: "sill.jpg",
+        url: "company/sill.jpg",
+        contentType: "image/jpeg",
+      },
+    ]);
+
+    const manifest = await ExportJobPackageService.buildManifest(
+      "job-1",
+      {
+        destination: "zip",
+        categories: ["markups"],
+        includeSummaryPdf: true,
+        includeItemIndexCsv: true,
+        includeTextWorkbook: true,
+        renameFilesForReadability: true,
+        groupByCategory: true,
+      },
+      "user-1",
+      "company-1",
+    );
+
+    expect(manifest.items.map((item) => item.id).sort()).toEqual(["attachment-1-markup-attachment", "source-1-markup"]);
+    const attachment = manifest.items.find((item) => item.id === "attachment-1-markup-attachment");
+    expect(attachment).toMatchObject({
+      category: "Markups",
+      itemType: "FILE",
+      folderPath: "99 - Other",
+      originalFileName: "sill.jpg",
+      storageKey: "company/sill.jpg",
+    });
   });
 });

@@ -30,12 +30,14 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
   const [createTaskFromNote, setCreateTaskFromNote] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [dailyReportFiles, setDailyReportFiles] = useState<File[]>([]);
+  const [taskFiles, setTaskFiles] = useState<File[]>([]);
   const router = useRouter();
 
   function closeModal() {
     setActiveModal("NONE");
     setCreateTaskFromNote(false);
     setDailyReportFiles([]);
+    setTaskFiles([]);
     setSubmitError(null);
   }
 
@@ -55,6 +57,12 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
     const nextFiles = Array.from(files ?? []).filter((file) => file.size > 0);
     if (nextFiles.length === 0) return;
     setDailyReportFiles((currentFiles) => [...currentFiles, ...nextFiles]);
+  }
+
+  function appendTaskFiles(files: FileList | null) {
+    const nextFiles = Array.from(files ?? []).filter((file) => file.size > 0);
+    if (nextFiles.length === 0) return;
+    setTaskFiles((currentFiles) => [...currentFiles, ...nextFiles]);
   }
 
   function buildOfflineAttachment(file: File) {
@@ -199,6 +207,12 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
     };
 
     if (isOffline()) {
+      if (taskFiles.length > 0) {
+        setSubmitError("Connect to upload task attachments.");
+        setIsSubmitting(false);
+        return;
+      }
+
       try {
         await queueOfflineTask(taskInput);
         closeModal();
@@ -211,6 +225,11 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
     }
 
     try {
+      const preparedAttachments: Awaited<ReturnType<typeof prepareClientUploadFile>>[] = [];
+      for (const file of taskFiles) {
+        preparedAttachments.push(await prepareClientUploadFile(file));
+      }
+
       const response = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -222,11 +241,32 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
         throw new Error(payload.error || "Could not create task.");
       }
 
+      const task = await response.json();
+      if (!task?.id) {
+        throw new Error("Task was created without an id.");
+      }
+
+      for (const prepared of preparedAttachments) {
+        await uploadFileRecord({
+          jobId,
+          taskId: task.id,
+          originalName: prepared.sourceFile.name,
+          name: "",
+          category: "Misc",
+          prepared,
+        });
+      }
+
       closeModal();
       router.refresh();
     } catch (error) {
       console.error(error);
       if (isNetworkCaptureError(error)) {
+        if (taskFiles.length > 0) {
+          setSubmitError("Connect to upload task attachments.");
+          return;
+        }
+
         try {
           await queueOfflineTask(taskInput);
           closeModal();
@@ -602,6 +642,49 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
           <div>
             <label htmlFor="task-due-date" className="block text-sm font-medium text-zinc-400 mb-1">Due Date</label>
             <Input id="task-due-date" name="dueDate" type="date" />
+          </div>
+
+          <div className="rounded-xl border border-dashed border-zinc-700 bg-black/20 p-4">
+            <label htmlFor="task-files" className="block text-sm font-medium text-zinc-300 mb-2">
+              Attach files or photos
+            </label>
+            <input
+              id="task-files"
+              type="file"
+              multiple
+              accept={ACCEPTED_UPLOAD_TYPES}
+              onChange={(event) => appendTaskFiles(event.currentTarget.files)}
+              className="block w-full text-sm text-zinc-300 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-100 hover:file:bg-zinc-700"
+            />
+            <input
+              id="task-camera"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(event) => {
+                appendTaskFiles(event.currentTarget.files);
+                event.currentTarget.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => document.getElementById("task-camera")?.click()}
+              className="md:hidden mt-3 w-full gap-2"
+            >
+              <Camera size={18} />
+              Take Photo
+            </Button>
+            {taskFiles.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {taskFiles.map((file, index) => (
+                  <p key={`${file.name}-${file.size}-${index}`} className="text-xs text-brand-light">
+                    {file.name}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
 
           {submitError && <p className="text-sm text-red-400">{submitError}</p>}

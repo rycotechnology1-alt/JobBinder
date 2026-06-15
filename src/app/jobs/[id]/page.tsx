@@ -32,7 +32,12 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
         include: { author: { select: { name: true, email: true } } },
       },
       files: { orderBy: { createdAt: "desc" } },
-      tasks: { orderBy: { createdAt: "desc" } },
+      tasks: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          files: { orderBy: { createdAt: "desc" } },
+        },
+      },
     },
   });
 
@@ -59,6 +64,8 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
     name: file.name,
     category: file.category,
     noteId: file.noteId,
+    taskId: file.taskId,
+    markupMarkId: file.markupMarkId,
     createdAt: file.createdAt.toISOString(),
   }));
 
@@ -71,6 +78,17 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
     priority: task.priority,
     dueDate: task.dueDate?.toISOString() ?? null,
     createdAt: task.createdAt.toISOString(),
+    files: task.files.map((file) => ({
+      id: file.id,
+      type: file.type,
+      originalName: file.originalName,
+      name: file.name,
+      category: file.category,
+      noteId: file.noteId,
+      taskId: file.taskId,
+      markupMarkId: file.markupMarkId,
+      createdAt: file.createdAt.toISOString(),
+    })),
   }));
 
   return (
