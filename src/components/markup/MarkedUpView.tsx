@@ -35,12 +35,13 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
   const [baseSize, setBaseSize] = useState<Size>(EMPTY_SIZE);
   const [status, setStatus] = useState("");
   const [activePin, setActivePin] = useState<Mark | null>(null);
-  const viewport = useMarkupViewport({
-    baseSize,
-    pageKey: mode === "pdf" ? pageNumber : src,
-    navigationEnabled: true,
-    padding: 32,
-  });
+  const { viewportRef, contentRef, contentStyle, viewScale, rasterScale, zoomIn, zoomOut, fitToScreen, pointerHandlers } =
+    useMarkupViewport({
+      baseSize,
+      pageKey: mode === "pdf" ? pageNumber : src,
+      navigationEnabled: true,
+      padding: 32,
+    });
 
   const pinNumbers = useMemo(() => {
     const map = new Map<string, number>();
@@ -66,14 +67,14 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
             <div className="mx-1 h-5 w-px bg-zinc-800" />
           </>
         )}
-        <button type="button" aria-label="Zoom out" onClick={viewport.zoomOut} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <button type="button" aria-label="Zoom out" onClick={zoomOut} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomOut size={18} />
         </button>
-        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewport.scale * 100)}%</span>
-        <button type="button" aria-label="Zoom in" onClick={viewport.zoomIn} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewScale * 100)}%</span>
+        <button type="button" aria-label="Zoom in" onClick={zoomIn} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomIn size={18} />
         </button>
-        <button type="button" aria-label="Fit to screen" onClick={viewport.fitToScreen} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <button type="button" aria-label="Fit to screen" onClick={fitToScreen} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <Maximize2 size={18} />
         </button>
         <div className="mx-1 h-5 w-px bg-zinc-800" />
@@ -84,37 +85,39 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
       </div>
 
       <div
-        ref={viewport.viewportRef}
-        className="min-h-0 flex-1 overflow-auto p-4"
+        ref={viewportRef}
+        className="relative min-h-0 flex-1 overflow-hidden"
         style={{ ...NO_SELECT_STYLE, touchAction: "none" }}
-        {...viewport.pointerHandlers}
+        {...pointerHandlers}
       >
-        {status && <p className="mb-3 text-center text-sm text-zinc-500">{status}</p>}
-        <PageSurface
-          mode={mode}
-          src={src}
-          pageNumber={pageNumber}
-          scale={viewport.scale}
-          onNumPages={setNumPages}
-          onStatus={setStatus}
-          onBaseSize={setBaseSize}
-        >
-          {(size) => (
-            <MarkupCanvasLayer
-              marks={store.marks}
-              size={size}
-              page={pageNumber}
-              tool="select"
-              style={{ color: "#ef4444", strokeWidth: 0.005, opacity: 1 }}
-              selectedId={null}
-              readOnly
-              onSelect={() => {}}
-              onCreate={() => {}}
-              onMove={() => {}}
-              onPinTap={setActivePin}
-            />
-          )}
-        </PageSurface>
+        {status && <p className="absolute inset-x-0 top-3 z-10 text-center text-sm text-zinc-500">{status}</p>}
+        <div ref={contentRef} style={contentStyle}>
+          <PageSurface
+            mode={mode}
+            src={src}
+            pageNumber={pageNumber}
+            rasterScale={rasterScale}
+            onNumPages={setNumPages}
+            onStatus={setStatus}
+            onBaseSize={setBaseSize}
+          >
+            {(size) => (
+              <MarkupCanvasLayer
+                marks={store.marks}
+                size={size}
+                page={pageNumber}
+                tool="select"
+                style={{ color: "#ef4444", strokeWidth: 0.005, opacity: 1 }}
+                selectedId={null}
+                readOnly
+                onSelect={() => {}}
+                onCreate={() => {}}
+                onMove={() => {}}
+                onPinTap={setActivePin}
+              />
+            )}
+          </PageSurface>
+        </div>
       </div>
 
       {activePin && (

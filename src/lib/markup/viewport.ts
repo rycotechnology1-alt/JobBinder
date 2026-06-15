@@ -18,23 +18,24 @@ export function fitEntireScale(contentSize: Size, viewportSize: Size, padding = 
   return clampScale(Math.min(1, availableWidth / contentSize.width, availableHeight / contentSize.height));
 }
 
-export function zoomAroundViewportPoint(input: {
+/**
+ * Translate-based focal zoom for the transform model. The content is drawn at
+ * `transform: translate(tx, ty) scale(s)` (origin 0,0), so a content point `c`
+ * lands at screen `tx + c * s`. To keep the point under (focalX, focalY) fixed
+ * while the scale changes, the new offset is derived from the scale ratio alone.
+ * Focal coords are viewport-local (clientX - viewport.left).
+ */
+export function zoomAroundPoint(input: {
+  tx: number;
+  ty: number;
   currentScale: number;
   nextScale: number;
-  scrollLeft: number;
-  scrollTop: number;
-  viewportLeft: number;
-  viewportTop: number;
-  focalClientX: number;
-  focalClientY: number;
-}): { scrollLeft: number; scrollTop: number } {
-  const focalX = input.focalClientX - input.viewportLeft;
-  const focalY = input.focalClientY - input.viewportTop;
-  const contentX = (input.scrollLeft + focalX) / input.currentScale;
-  const contentY = (input.scrollTop + focalY) / input.currentScale;
-
+  focalX: number;
+  focalY: number;
+}): { tx: number; ty: number } {
+  const ratio = input.nextScale / input.currentScale;
   return {
-    scrollLeft: contentX * input.nextScale - focalX,
-    scrollTop: contentY * input.nextScale - focalY,
+    tx: input.focalX - (input.focalX - input.tx) * ratio,
+    ty: input.focalY - (input.focalY - input.ty) * ratio,
   };
 }

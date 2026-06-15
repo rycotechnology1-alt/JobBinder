@@ -48,12 +48,13 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
   const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
   const navigationEnabled = tool === "select";
-  const viewport = useMarkupViewport({
-    baseSize,
-    pageKey: mode === "pdf" ? pageNumber : src,
-    navigationEnabled,
-    padding: 32,
-  });
+  const { viewportRef, contentRef, contentStyle, viewScale, rasterScale, zoomIn, zoomOut, fitToScreen, pointerHandlers } =
+    useMarkupViewport({
+      baseSize,
+      pageKey: mode === "pdf" ? pageNumber : src,
+      navigationEnabled,
+      padding: 32,
+    });
 
   const selected = store.marks.find((m) => m.id === selectedId) ?? null;
 
@@ -140,35 +141,37 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
       </header>
 
       <main
-        ref={viewport.viewportRef}
-        className="min-h-0 flex-1 overflow-auto bg-zinc-900 p-4"
+        ref={viewportRef}
+        className="relative min-h-0 flex-1 overflow-hidden bg-zinc-900"
         style={{ ...NO_SELECT_STYLE, touchAction: "none" }}
-        {...viewport.pointerHandlers}
+        {...pointerHandlers}
       >
-        {status && <p className="mb-3 text-center text-sm text-zinc-400">{status}</p>}
-        <PageSurface
-          mode={mode}
-          src={src}
-          pageNumber={pageNumber}
-          scale={viewport.scale}
-          onNumPages={setNumPages}
-          onStatus={setStatus}
-          onBaseSize={setBaseSize}
-        >
-          {(size) => (
-            <MarkupCanvasLayer
-              marks={store.marks}
-              size={size}
-              page={pageNumber}
-              tool={tool}
-              style={{ color, strokeWidth, opacity: 1 }}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onCreate={applyCreate}
-              onMove={applyMove}
-            />
-          )}
-        </PageSurface>
+        {status && <p className="absolute inset-x-0 top-3 z-10 text-center text-sm text-zinc-400">{status}</p>}
+        <div ref={contentRef} style={contentStyle}>
+          <PageSurface
+            mode={mode}
+            src={src}
+            pageNumber={pageNumber}
+            rasterScale={rasterScale}
+            onNumPages={setNumPages}
+            onStatus={setStatus}
+            onBaseSize={setBaseSize}
+          >
+            {(size) => (
+              <MarkupCanvasLayer
+                marks={store.marks}
+                size={size}
+                page={pageNumber}
+                tool={tool}
+                style={{ color, strokeWidth, opacity: 1 }}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onCreate={applyCreate}
+                onMove={applyMove}
+              />
+            )}
+          </PageSurface>
+        </div>
       </main>
 
       {selected?.kind === "PIN" && (
@@ -193,14 +196,14 @@ export function MarkupEditor({ fileId, src, mode, filename, onClose, save }: Pro
             <div className="mx-1 h-5 w-px bg-zinc-800" />
           </>
         )}
-        <button type="button" aria-label="Zoom out" onClick={viewport.zoomOut} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <button type="button" aria-label="Zoom out" onClick={zoomOut} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomOut size={18} />
         </button>
-        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewport.scale * 100)}%</span>
-        <button type="button" aria-label="Zoom in" onClick={viewport.zoomIn} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewScale * 100)}%</span>
+        <button type="button" aria-label="Zoom in" onClick={zoomIn} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <ZoomIn size={18} />
         </button>
-        <button type="button" aria-label="Fit to screen" onClick={viewport.fitToScreen} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
+        <button type="button" aria-label="Fit to screen" onClick={fitToScreen} className="rounded-lg p-1.5 text-zinc-300 hover:bg-zinc-800">
           <Maximize2 size={18} />
         </button>
       </div>

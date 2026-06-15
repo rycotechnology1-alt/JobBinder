@@ -20,12 +20,7 @@ import { getMarkupContentUrl, getPreviewMetadataUrl } from "@/lib/file-preview";
 import { MarkupEditor } from "@/components/markup/MarkupEditor";
 import { MarkedUpView } from "@/components/markup/MarkedUpView";
 import { useMarkupViewport } from "@/components/markup/useMarkupViewport";
-import {
-  buildPdfTextLayer,
-  loadPdfFromUrl,
-  renderPdfPageToCanvas,
-  type PdfDocumentProxy,
-} from "@/lib/markup/pdf-render";
+import { PageSurface } from "@/components/markup/PageSurface";
 
 type RenderMode = "image" | "pdf" | "text" | "csv" | "spreadsheet" | "docx" | "unsupported";
 type Size = {
@@ -246,8 +241,8 @@ function PreviewSurface({
 }: {
   file: PreviewPayload["file"];
 }) {
-  if (file.renderMode === "image") return <ImagePreview src={file.originalUrl} alt={file.filename} />;
-  if (file.renderMode === "pdf") return <PdfPreview src={file.originalUrl} />;
+  if (file.renderMode === "image") return <OriginalSurface src={file.originalUrl} mode="image" />;
+  if (file.renderMode === "pdf") return <OriginalSurface src={file.originalUrl} mode="pdf" />;
   if (file.renderMode === "text") return <TextPreview src={file.originalUrl} />;
   if (file.renderMode === "csv") return <CsvPreview src={file.originalUrl} />;
   if (file.renderMode === "docx") return <DocxPreview src={file.originalUrl} />;
@@ -428,137 +423,66 @@ function CenteredState({
   );
 }
 
-function ImagePreview({ src, alt }: { src: string; alt: string }) {
-  const [scale, setScale] = useState(1);
-
-  return (
-    <div className="flex h-full select-none flex-col" style={NO_SELECT_STYLE}>
-      <ViewerToolbar>
-        <IconButton label="Zoom out" onClick={() => setScale((current) => Math.max(0.5, current - 0.25))}>
-          <ZoomOut size={16} />
-        </IconButton>
-        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(scale * 100)}%</span>
-        <IconButton label="Zoom in" onClick={() => setScale((current) => Math.min(3, current + 0.25))}>
-          <ZoomIn size={16} />
-        </IconButton>
-      </ViewerToolbar>
-      <div className="min-h-0 flex-1 overflow-auto p-4" style={NO_SELECT_STYLE}>
-        <div className="flex min-h-full items-center justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={src}
-            alt={alt}
-            draggable={false}
-            className="max-h-full max-w-full select-none object-contain transition-transform"
-            style={{ ...NO_SELECT_STYLE, transform: `scale(${scale})`, transformOrigin: "center" }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PdfPreview({ src }: { src: string }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const textLayerRef = useRef<HTMLDivElement | null>(null);
-  const [pageCount, setPageCount] = useState(0);
+// One smooth viewer for both the original PDF and the original image: pinch /
+// wheel / drag zoom and pan via the shared transform engine, crisp re-raster on
+// settle. No markup overlay here — the marked-up view adds that on the same engine.
+function OriginalSurface({ src, mode }: { src: string; mode: "pdf" | "image" }) {
   const [pageNumber, setPageNumber] = useState(1);
+  const [numPages, setNumPages] = useState(1);
   const [baseSize, setBaseSize] = useState<Size>(EMPTY_SIZE);
-  const [status, setStatus] = useState("Loading PDF...");
-  const [pdfDocument, setPdfDocument] = useState<PdfDocumentProxy | null>(null);
-  const viewport = useMarkupViewport({
-    baseSize,
-    pageKey: pageNumber,
-    navigationEnabled: true,
-    padding: 32,
-  });
-
-  useEffect(() => {
-    let isCanceled = false;
-
-    async function loadPdf() {
-      setStatus("Loading PDF...");
-      const document = await loadPdfFromUrl(src);
-      if (isCanceled) {
-        void document.destroy();
-        return;
-      }
-      setPdfDocument(document);
-      setPageCount(document.numPages);
-      setPageNumber(1);
-    }
-
-    loadPdf().catch((error) => {
-      if (!isCanceled) setStatus(error instanceof Error ? error.message : "Could not load PDF.");
+  const [status, setStatus] = useState(mode === "pdf" ? "Loading PDF..." : "");
+  const { viewportRef, contentRef, contentStyle, viewScale, rasterScale, zoomIn, zoomOut, fitToScreen, pointerHandlers } =
+    useMarkupViewport({
+      baseSize,
+      pageKey: mode === "pdf" ? pageNumber : src,
+      navigationEnabled: true,
+      padding: 32,
     });
-
-    return () => {
-      isCanceled = true;
-    };
-  }, [src]);
-
-  useEffect(() => {
-    if (!pdfDocument || !canvasRef.current || !textLayerRef.current) return;
-    let isCanceled = false;
-    const currentDocument = pdfDocument;
-
-    async function renderPage() {
-      setStatus("Rendering page...");
-      const page = await currentDocument.getPage(pageNumber);
-      const canvas = canvasRef.current;
-      const textLayer = textLayerRef.current;
-      if (isCanceled || !canvas || !textLayer) return;
-
-      const baseViewport = page.getViewport({ scale: 1 });
-      setBaseSize({ width: baseViewport.width, height: baseViewport.height });
-      const { viewport: pdfViewport } = await renderPdfPageToCanvas(page, canvas, viewport.scale);
-      if (isCanceled) return;
-      await buildPdfTextLayer(page, pdfViewport, textLayer);
-      if (!isCanceled) setStatus("");
-    }
-
-    renderPage().catch((error) => {
-      if (!isCanceled) setStatus(error instanceof Error ? error.message : "Could not render PDF page.");
-    });
-
-    return () => {
-      isCanceled = true;
-    };
-  }, [pdfDocument, pageNumber, viewport.scale]);
 
   return (
     <div className="flex h-full select-none flex-col" style={NO_SELECT_STYLE}>
       <ViewerToolbar>
-        <Button type="button" variant="ghost" size="sm" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => page - 1)}>
-          Previous
-        </Button>
-        <span className="text-xs text-zinc-400">Page {pageNumber} of {pageCount || "..."}</span>
-        <Button type="button" variant="ghost" size="sm" disabled={pageCount === 0 || pageNumber >= pageCount} onClick={() => setPageNumber((page) => page + 1)}>
-          Next
-        </Button>
-        <IconButton label="Zoom out" onClick={viewport.zoomOut}>
+        {mode === "pdf" && (
+          <>
+            <Button type="button" variant="ghost" size="sm" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => page - 1)}>
+              Previous
+            </Button>
+            <span className="text-xs text-zinc-400">Page {pageNumber} of {numPages || "..."}</span>
+            <Button type="button" variant="ghost" size="sm" disabled={numPages === 0 || pageNumber >= numPages} onClick={() => setPageNumber((page) => page + 1)}>
+              Next
+            </Button>
+          </>
+        )}
+        <IconButton label="Zoom out" onClick={zoomOut}>
           <ZoomOut size={16} />
         </IconButton>
-        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewport.scale * 100)}%</span>
-        <IconButton label="Zoom in" onClick={viewport.zoomIn}>
+        <span className="min-w-12 text-center text-xs text-zinc-400">{Math.round(viewScale * 100)}%</span>
+        <IconButton label="Zoom in" onClick={zoomIn}>
           <ZoomIn size={16} />
         </IconButton>
-        <IconButton label="Fit to screen" onClick={viewport.fitToScreen}>
+        <IconButton label="Fit to screen" onClick={fitToScreen}>
           <Maximize2 size={16} />
         </IconButton>
       </ViewerToolbar>
       <div
-        ref={viewport.viewportRef}
-        className="min-h-0 flex-1 overflow-auto p-4"
+        ref={viewportRef}
+        className="relative min-h-0 flex-1 overflow-hidden"
         style={{ ...NO_SELECT_STYLE, touchAction: "none" }}
-        {...viewport.pointerHandlers}
+        {...pointerHandlers}
       >
-        {status && <p className="mb-3 text-center text-sm text-zinc-500">{status}</p>}
-        <div className="mx-auto w-fit rounded-lg bg-white shadow-2xl">
-          <div className="relative">
-            <canvas ref={canvasRef} />
-            <div ref={textLayerRef} className="absolute inset-0 overflow-hidden select-none" style={NO_SELECT_STYLE} />
-          </div>
+        {status && <p className="absolute inset-x-0 top-3 z-10 text-center text-sm text-zinc-500">{status}</p>}
+        <div ref={contentRef} style={contentStyle}>
+          <PageSurface
+            mode={mode}
+            src={src}
+            pageNumber={pageNumber}
+            rasterScale={rasterScale}
+            onNumPages={setNumPages}
+            onStatus={setStatus}
+            onBaseSize={setBaseSize}
+          >
+            {() => null}
+          </PageSurface>
         </div>
       </div>
     </div>

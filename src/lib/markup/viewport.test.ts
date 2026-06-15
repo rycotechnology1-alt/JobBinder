@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampScale, fitEntireScale, zoomAroundViewportPoint } from "./viewport";
+import { clampScale, fitEntireScale, zoomAroundPoint } from "./viewport";
 
 describe("markup viewport helpers", () => {
   it("fits a very large image below the old 50 percent minimum", () => {
@@ -20,19 +20,29 @@ describe("markup viewport helpers", () => {
     expect(clampScale(1.25)).toBe(1.25);
   });
 
-  it("preserves the viewport focal point when zooming around a point", () => {
-    const result = zoomAroundViewportPoint({
+  it("keeps the focal point pinned on screen when zooming the transform", () => {
+    // Content point under the focal stays at the same viewport-local pixel after zoom.
+    const result = zoomAroundPoint({
+      tx: 0,
+      ty: 0,
       currentScale: 1,
       nextScale: 2,
-      scrollLeft: 100,
-      scrollTop: 50,
-      viewportLeft: 10,
-      viewportTop: 20,
-      focalClientX: 210,
-      focalClientY: 220,
+      focalX: 100,
+      focalY: 50,
     });
 
-    expect(result.scrollLeft).toBeCloseTo(400);
-    expect(result.scrollTop).toBeCloseTo(300);
+    expect(result.tx).toBeCloseTo(-100);
+    expect(result.ty).toBeCloseTo(-50);
+
+    const screenAfter = result.tx + ((100 - 0) / 1) * 2;
+    expect(screenAfter).toBeCloseTo(100);
+  });
+
+  it("is the inverse of itself when zooming back out around the same point", () => {
+    const zoomedIn = zoomAroundPoint({ tx: 0, ty: 0, currentScale: 1, nextScale: 2, focalX: 100, focalY: 50 });
+    const zoomedOut = zoomAroundPoint({ ...zoomedIn, currentScale: 2, nextScale: 1, focalX: 100, focalY: 50 });
+
+    expect(zoomedOut.tx).toBeCloseTo(0);
+    expect(zoomedOut.ty).toBeCloseTo(0);
   });
 });

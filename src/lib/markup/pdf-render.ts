@@ -13,11 +13,36 @@ type PdfTextItem = {
   transform: number[];
 };
 
+/** A pdf.js render task: its completion promise plus a cooperative cancel(). */
+export type RenderTask = {
+  promise: Promise<void>;
+  cancel: () => void;
+};
+
 export type PdfPageProxy = {
   getViewport: (input: { scale: number }) => PdfViewport;
-  render: (input: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => { promise: Promise<void> };
+  render: (input: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => RenderTask;
   getTextContent: () => Promise<{ items: unknown[] }>;
 };
+
+// Largest backing-store edge we will allocate. pdf.js (and the browser) blank
+// the canvas if it grows past the device limit, so we cap it: big plans at deep
+// zoom stay within budget on mobile rather than rendering to a dead canvas.
+const MAX_CANVAS_DIMENSION = 8192;
+
+// One in-flight render per canvas. pdf.js throws "Cannot use the same canvas
+// during multiple render() operations" if a second render starts before the
+// first settles, so we cancel and await the previous task before re-rendering.
+const activeRenders = new WeakMap<HTMLCanvasElement, RenderTask>();
+
+/** True for the cancellation pdf.js raises (and we re-raise) when a render is superseded. */
+export function isRenderCancelled(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "RenderingCancelledException"
+  );
+}
 
 export type PdfDocumentProxy = {
   numPages: number;
@@ -49,14 +74,33 @@ export async function loadPdfFromUrl(src: string): Promise<PdfDocumentProxy> {
   return pdfjs.getDocument({ data: bytes }).promise as unknown as PdfDocumentProxy;
 }
 
-/** Render a page into the canvas at the given scale; returns the rendered pixel size. */
+/**
+ * Render a page into the canvas at the given scale; returns the rendered CSS
+ * pixel size. Renders are serialized per canvas: any in-flight render on the
+ * same canvas is cancelled and awaited first, so two renders never share a
+ * canvas. A superseded call rejects with a cancellation (see isRenderCancelled)
+ * that callers ignore.
+ */
 export async function renderPdfPageToCanvas(
   page: PdfPageProxy,
   canvas: HTMLCanvasElement,
   scale: number,
 ): Promise<{ viewport: PdfViewport; width: number; height: number }> {
+  const previous = activeRenders.get(canvas);
+  if (previous) {
+    previous.cancel();
+    try {
+      await previous.promise;
+    } catch {
+      // Expected: the previous render rejects when cancelled. Ignore it.
+    }
+  }
+
   const viewport = page.getViewport({ scale });
-  const outputScale = typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1);
+  const dpr = typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1);
+  // Cap the backing store: never let either edge exceed MAX_CANVAS_DIMENSION,
+  // reducing the device-pixel multiplier uniformly so the aspect ratio holds.
+  const outputScale = Math.min(dpr, MAX_CANVAS_DIMENSION / viewport.width, MAX_CANVAS_DIMENSION / viewport.height);
   const renderViewport = outputScale === 1 ? viewport : page.getViewport({ scale: scale * outputScale });
   canvas.width = Math.floor(viewport.width * outputScale);
   canvas.height = Math.floor(viewport.height * outputScale);
@@ -64,7 +108,14 @@ export async function renderPdfPageToCanvas(
   canvas.style.height = `${viewport.height}px`;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Could not prepare PDF canvas.");
-  await page.render({ canvasContext: context, viewport: renderViewport }).promise;
+
+  const task = page.render({ canvasContext: context, viewport: renderViewport });
+  activeRenders.set(canvas, task);
+  try {
+    await task.promise;
+  } finally {
+    if (activeRenders.get(canvas) === task) activeRenders.delete(canvas);
+  }
   return { viewport, width: viewport.width, height: viewport.height };
 }
 
