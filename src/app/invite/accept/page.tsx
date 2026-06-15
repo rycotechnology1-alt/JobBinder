@@ -30,6 +30,8 @@ export default async function InviteAcceptPage({
   const canAccept =
     Boolean(token) &&
     invite &&
+    invite.status === "PENDING" &&
+    !invite.canceledAt &&
     !invite.acceptedAt;
 
   return (
@@ -43,7 +45,7 @@ export default async function InviteAcceptPage({
             <div>
               <h1 className="text-2xl font-bold text-white">Accept invite</h1>
               <p className="text-sm text-zinc-400">
-                Create your password to join the company workspace.
+                Create your password to join the account workspace.
               </p>
             </div>
           </div>

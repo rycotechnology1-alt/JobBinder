@@ -30,7 +30,7 @@ export const proxy = auth((req) => {
   if (
     req.auth?.user &&
     req.auth.user.emailVerified &&
-    req.auth.user.companyId &&
+    req.auth.user.hasActiveMembership &&
     (pathname === "/" ||
       pathname.startsWith("/sign-in") ||
       pathname.startsWith("/password-reset") ||
@@ -44,7 +44,7 @@ export const proxy = auth((req) => {
 
   if (
     req.auth?.user?.emailVerified &&
-    !req.auth.user.companyId &&
+    !req.auth.user.hasActiveMembership &&
     !isPublicPath
   ) {
     return NextResponse.redirect(new URL("/", req.nextUrl.origin));

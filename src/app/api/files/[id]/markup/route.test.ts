@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const requireCompanyUser = vi.fn();
+const requireFileAccess = vi.fn();
 const accessErrorResponse = vi.fn();
 const fileFindFirst = vi.fn();
 const markFindMany = vi.fn();
@@ -10,7 +10,7 @@ const markUpdate = vi.fn();
 const exportUpsert = vi.fn();
 const transaction = vi.fn();
 
-vi.mock("@/lib/current-user", () => ({ requireCompanyUser, accessErrorResponse }));
+vi.mock("@/lib/current-user", () => ({ requireFileAccess, accessErrorResponse }));
 vi.mock("@/lib/prisma", () => ({
   default: {
     file: { findFirst: fileFindFirst },
@@ -53,7 +53,10 @@ async function postMarkup(body: unknown, id = "file-1") {
 describe("/api/files/[id]/markup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireFileAccess.mockResolvedValue({
+      user: { id: "user-1", companyId: "company-1" },
+      file: { id: "file-1" },
+    });
     accessErrorResponse.mockReturnValue(null);
     fileFindFirst.mockResolvedValue({ id: "file-1" });
     markFindMany.mockResolvedValue([]);

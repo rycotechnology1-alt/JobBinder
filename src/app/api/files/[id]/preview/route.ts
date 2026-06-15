@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import {
   accessErrorResponse,
-  requireCompanyUser,
+  requireFileAccess,
 } from "@/lib/current-user";
 import {
   getFilePreviewInfo,
@@ -30,8 +30,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireCompanyUser();
     const { id } = await params;
+    const { user } = await requireFileAccess(id);
     const file = await loadFileForPreview(id, user.companyId);
 
     if (!file) {

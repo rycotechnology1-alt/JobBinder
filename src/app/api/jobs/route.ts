@@ -4,6 +4,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { buildAccessibleJobWhere, isAccountManagerRole } from "@/lib/account-access";
 import {
   getDashboardJobSearchWhere,
   getDashboardStatusFilterWhere,
@@ -22,7 +23,13 @@ export async function GET(req: NextRequest) {
 
     const jobs = await prisma.job.findMany({
       where: {
-        companyId: user.companyId,
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
         ...getDashboardStatusFilterWhere(status),
         ...getDashboardJobSearchWhere(search),
       },
@@ -61,14 +68,12 @@ export async function PATCH(req: NextRequest) {
     const user = await requireCompanyUser();
     const body = await req.json();
     const id = typeof body.id === "string" ? body.id : "";
-    const managementFields = ["status", "priority", "targetCompletionDate"] as const;
-    const includesManagementFields = managementFields.some((field) => field in body);
 
     if (!id) {
       return NextResponse.json({ error: "Missing job id" }, { status: 400 });
     }
 
-    if (includesManagementFields && user.role !== "ADMIN") {
+    if (!isAccountManagerRole(user.role)) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
@@ -153,15 +158,33 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireCompanyUser();
     const body = await req.json();
-    const { title, customerName, jobNumber, poNumber, address } = body;
+    const { title, customerName, jobNumber, poNumber, address, workspaceId } = body;
+
+    if (!isAccountManagerRole(user.role)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
 
     if (!title) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    if (!workspaceId || typeof workspaceId !== "string") {
+      return NextResponse.json({ error: "Workspace is required" }, { status: 400 });
+    }
+
+    const workspace = await prisma.workspace.findFirst({
+      where: { id: workspaceId, companyId: user.companyId },
+      select: { id: true },
+    });
+
+    if (!workspace) {
+      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+    }
+
     const job = await prisma.job.create({
       data: {
         companyId: user.companyId,
+        workspaceId: workspace.id,
         title,
         createdById: user.id,
         customerName,

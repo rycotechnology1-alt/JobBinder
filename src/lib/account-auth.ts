@@ -40,8 +40,14 @@ type InviteRecord = {
   companyId: string;
   email: string;
   role: Role;
+  status?: "PENDING" | "ACCEPTED" | "CANCELED" | "EXPIRED";
   expiresAt: Date;
   acceptedAt: Date | null;
+  canceledAt?: Date | null;
+  invitedByMembershipId?: string | null;
+  orgUnitAssignments?: Array<{ orgUnitId: string }>;
+  crewAssignments?: Array<{ crewId: string }>;
+  workspaceAssignments?: Array<{ workspaceId: string }>;
 };
 
 type AccountAuthDataClient = {
@@ -52,6 +58,26 @@ type AccountAuthDataClient = {
   };
   company: {
     create(args: object): Promise<CompanyRecord>;
+  };
+  companyMembership: {
+    findUnique(args: object): Promise<{ id: string; companyId: string; userId: string; role: Role; status: string } | null>;
+    create(args: object): Promise<{ id: string; companyId: string; userId: string; role: Role; status: string }>;
+    update(args: object): Promise<{ id: string; companyId: string; userId: string; role: Role; status: string }>;
+  };
+  orgUnitMembership: {
+    createMany(args: object): Promise<{ count: number }>;
+  };
+  crewMembership: {
+    createMany(args: object): Promise<{ count: number }>;
+  };
+  workspaceAccessGrant: {
+    createMany(args: object): Promise<{ count: number }>;
+  };
+  orgUnit: {
+    create(args: object): Promise<{ id: string; companyId: string }>;
+  };
+  workspace: {
+    create(args: object): Promise<{ id: string; companyId: string; orgUnitId: string }>;
   };
   invite: {
     findUnique(args: object): Promise<InviteRecord | null>;
@@ -135,14 +161,39 @@ export async function createCompanyAdminAccount(
       },
     });
 
-    await tx.user.create({
+    const owner = await tx.user.create({
       data: {
         email,
         name: adminName,
         hashedPassword,
         emailVerified: null,
         companyId: company.id,
-        role: Role.ADMIN,
+        role: Role.OWNER,
+      },
+    });
+
+    await tx.companyMembership.create({
+      data: {
+        companyId: company.id,
+        userId: owner.id,
+        role: Role.OWNER,
+        status: "ACTIVE",
+      },
+    });
+
+    const orgUnit = await tx.orgUnit.create({
+      data: {
+        companyId: company.id,
+        name: companyName,
+        kind: "COMPANY",
+      },
+    });
+
+    await tx.workspace.create({
+      data: {
+        companyId: company.id,
+        orgUnitId: orgUnit.id,
+        name: "Main Workspace",
       },
     });
   });
@@ -182,9 +233,21 @@ export async function acceptCompanyInvite(
 
   const invite = await deps.prisma.invite.findUnique({
     where: { id: input.inviteId },
+    include: {
+      orgUnitAssignments: { select: { orgUnitId: true } },
+      crewAssignments: { select: { crewId: true } },
+      workspaceAssignments: { select: { workspaceId: true } },
+    },
   });
 
-  if (!invite || invite.acceptedAt || invite.expiresAt.getTime() <= now.getTime()) {
+  if (
+    !invite ||
+    invite.acceptedAt ||
+    invite.canceledAt ||
+    invite.status === "CANCELED" ||
+    invite.status === "ACCEPTED" ||
+    invite.expiresAt.getTime() <= now.getTime()
+  ) {
     return { ok: false, message: "This invite is invalid or expired." };
   }
 
@@ -207,23 +270,21 @@ export async function acceptCompanyInvite(
       where: { email: invite.email },
     });
 
-    if (existingUser?.companyId && existingUser.companyId !== invite.companyId) {
-      throw new Error("This email is already attached to another company.");
-    }
-
+    let userId: string;
     if (existingUser) {
-      await tx.user.update({
+      const updatedUser = await tx.user.update({
         where: { id: existingUser.id },
         data: {
           name,
           hashedPassword,
-          companyId: invite.companyId,
-          role: invite.role,
+          companyId: existingUser.companyId ?? invite.companyId,
+          role: existingUser.role ?? invite.role,
           emailVerified: now,
         },
       });
+      userId = updatedUser.id;
     } else {
-      await tx.user.create({
+      const createdUser = await tx.user.create({
         data: {
           email: invite.email,
           name,
@@ -233,11 +294,82 @@ export async function acceptCompanyInvite(
           emailVerified: now,
         },
       });
+      userId = createdUser.id;
+    }
+
+    const existingMembership = await tx.companyMembership.findUnique({
+      where: {
+        companyId_userId: {
+          companyId: invite.companyId,
+          userId,
+        },
+      },
+    });
+
+    const membership = existingMembership
+      ? await tx.companyMembership.update({
+        where: {
+          companyId_userId: {
+            companyId: invite.companyId,
+            userId,
+          },
+        },
+        data: {
+          role: invite.role,
+          status: "ACTIVE",
+          deactivatedAt: null,
+          removedAt: null,
+        },
+      })
+      : await tx.companyMembership.create({
+        data: {
+          companyId: invite.companyId,
+          userId,
+          role: invite.role,
+          status: "ACTIVE",
+        },
+      });
+
+    const orgUnitAssignments = invite.orgUnitAssignments ?? [];
+    const crewAssignments = invite.crewAssignments ?? [];
+    const workspaceAssignments = invite.workspaceAssignments ?? [];
+
+    if (orgUnitAssignments.length > 0) {
+      await tx.orgUnitMembership.createMany({
+        data: orgUnitAssignments.map((assignment) => ({
+          orgUnitId: assignment.orgUnitId,
+          companyMembershipId: membership.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (crewAssignments.length > 0) {
+      await tx.crewMembership.createMany({
+        data: crewAssignments.map((assignment) => ({
+          crewId: assignment.crewId,
+          companyMembershipId: membership.id,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (workspaceAssignments.length > 0) {
+      await tx.workspaceAccessGrant.createMany({
+        data: workspaceAssignments.map((assignment) => ({
+          companyId: invite.companyId,
+          workspaceId: assignment.workspaceId,
+          principalType: "MEMBER",
+          principalId: membership.id,
+          createdByMembershipId: invite.invitedByMembershipId ?? null,
+        })),
+        skipDuplicates: true,
+      });
     }
 
     await tx.invite.update({
       where: { id: invite.id },
-      data: { acceptedAt: now },
+      data: { acceptedAt: now, status: "ACCEPTED" },
     });
   });
 

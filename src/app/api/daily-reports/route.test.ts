@@ -35,7 +35,14 @@ async function postDailyReport(body: unknown) {
 describe("POST /api/daily-reports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({
+      id: "user-1",
+      companyId: "company-1",
+      membershipId: "membership-1",
+      role: "ADMIN",
+      crewIds: [],
+      orgUnitIds: [],
+    });
     accessErrorResponse.mockReturnValue(null);
     jobFindFirst.mockResolvedValue({ id: "job-1" });
     noteFindFirst.mockResolvedValue(null);

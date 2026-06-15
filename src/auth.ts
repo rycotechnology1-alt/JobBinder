@@ -92,14 +92,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           emailVerified: true,
           name: true,
           role: true,
+          memberships: {
+            where: { status: "ACTIVE" },
+            orderBy: { joinedAt: "asc" },
+            select: {
+              id: true,
+              companyId: true,
+              role: true,
+            },
+          },
         },
       });
 
       if (!appUser) return session;
 
+      const activeMembership = appUser.memberships[0] ?? null;
+
       session.user.id = appUser.id;
-      session.user.companyId = appUser.companyId;
-      session.user.role = appUser.role;
+      session.user.companyId = activeMembership?.companyId ?? appUser.companyId;
+      session.user.membershipId = activeMembership?.id ?? null;
+      session.user.role = activeMembership?.role ?? appUser.role;
+      session.user.hasActiveMembership = Boolean(activeMembership);
       session.user.emailVerified = appUser.emailVerified;
       return session;
     },

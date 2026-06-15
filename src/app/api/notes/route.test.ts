@@ -45,7 +45,14 @@ async function postNote(body: unknown) {
 describe("PATCH /api/notes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({
+      id: "user-1",
+      companyId: "company-1",
+      membershipId: "membership-1",
+      role: "ADMIN",
+      crewIds: [],
+      orgUnitIds: [],
+    });
     accessErrorResponse.mockReturnValue(null);
     jobFindFirst.mockResolvedValue({ id: "job-1" });
     noteFindFirst.mockResolvedValue({ id: "note-1" });
@@ -92,7 +99,14 @@ describe("PATCH /api/notes", () => {
 describe("POST /api/notes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({
+      id: "user-1",
+      companyId: "company-1",
+      membershipId: "membership-1",
+      role: "ADMIN",
+      crewIds: [],
+      orgUnitIds: [],
+    });
     accessErrorResponse.mockReturnValue(null);
     jobFindFirst.mockResolvedValue({ id: "job-1" });
     noteFindFirst.mockResolvedValue(null);

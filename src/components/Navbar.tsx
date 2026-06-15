@@ -2,6 +2,7 @@ import Link from "next/link";
 import { HardHat } from "lucide-react";
 import { signOut } from "@/auth";
 import { getCurrentAppUser } from "@/lib/current-user";
+import { isAccountManagerRole } from "@/lib/account-access";
 import { AccountMenu } from "@/components/AccountMenu";
 import { NavLinks } from "@/components/NavLinks";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
@@ -9,6 +10,13 @@ import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 export async function Navbar() {
   const user = await getCurrentAppUser();
   const hasVerifiedCompany = Boolean(user?.companyId && user.emailVerified);
+  const canManageOrganization = Boolean(user && isAccountManagerRole(user.role));
+  const accounts = user?.memberships.map((membership) => ({
+    companyId: membership.companyId,
+    companyName: membership.company.name,
+    role: membership.role,
+    isActive: membership.companyId === user.companyId,
+  })) ?? [];
 
   async function handleSignOut() {
     "use server";
@@ -29,7 +37,7 @@ export async function Navbar() {
         </Link>
 
         <div className="flex items-center gap-6">
-          {hasVerifiedCompany && <NavLinks />}
+          {hasVerifiedCompany && <NavLinks showOrganization={canManageOrganization} />}
           {hasVerifiedCompany && <SyncStatusIndicator />}
           
           {user ? (
@@ -37,6 +45,8 @@ export async function Navbar() {
               displayName={user.name ?? user.email ?? "User"}
               email={user.email ?? null}
               hasCompany={hasVerifiedCompany}
+              canManageOrganization={canManageOrganization}
+              accounts={accounts}
               signOutAction={handleSignOut}
             />
           ) : (

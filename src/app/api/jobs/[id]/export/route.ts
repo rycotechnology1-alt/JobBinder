@@ -5,6 +5,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { isAccountManagerRole } from "@/lib/account-access";
 import { ExportJobPackageService, ExportOptions } from "@/lib/services/ExportJobPackageService";
 import { uploadR2Object } from "@/lib/r2";
 
@@ -16,6 +17,10 @@ export async function POST(
     const user = await requireCompanyUser();
     const { id: jobId } = await params;
     const body = await req.json();
+
+    if (!isAccountManagerRole(user.role)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
 
     const job = await prisma.job.findFirst({
       where: { id: jobId, companyId: user.companyId },
@@ -123,6 +128,10 @@ export async function GET(
     const { id: jobId } = await params;
     const { searchParams } = new URL(req.url);
     const exportId = searchParams.get("exportId");
+
+    if (!isAccountManagerRole(user.role)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
 
     const job = await prisma.job.findFirst({
       where: { id: jobId, companyId: user.companyId },

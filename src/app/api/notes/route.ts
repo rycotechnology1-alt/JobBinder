@@ -5,6 +5,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { buildAccessibleJobWhere, isAccountManagerRole } from "@/lib/account-access";
 import { normalizeAssetCategory } from "@/lib/asset-categories";
 
 export async function POST(req: NextRequest) {
@@ -32,7 +33,16 @@ export async function POST(req: NextRequest) {
 
     if (jobId) {
       const job = await prisma.job.findFirst({
-        where: { id: jobId, companyId: user.companyId },
+        where: {
+          id: jobId,
+          ...buildAccessibleJobWhere({
+            companyId: user.companyId,
+            membershipId: user.membershipId,
+            role: user.role,
+            crewIds: user.crewIds,
+            orgUnitIds: user.orgUnitIds,
+          }),
+        },
         select: { id: true },
       });
 
@@ -78,7 +88,16 @@ export async function PATCH(req: NextRequest) {
     }
 
     const job = await prisma.job.findFirst({
-      where: { id: jobId, companyId: user.companyId },
+      where: {
+        id: jobId,
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
+      },
       select: { id: true },
     });
 
@@ -87,7 +106,11 @@ export async function PATCH(req: NextRequest) {
     }
 
     const note = await prisma.note.findFirst({
-      where: { id, companyId: user.companyId },
+      where: {
+        id,
+        companyId: user.companyId,
+        ...(isAccountManagerRole(user.role) ? {} : { authorId: user.id }),
+      },
       select: { id: true },
     });
 

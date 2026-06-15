@@ -8,15 +8,16 @@ import { cn } from "@/lib/utils";
 const links = [
   { href: "/dashboard", label: "Jobs", icon: HardHat },
   { href: "/inbox", label: "Inbox", icon: Inbox },
-  { href: "/settings/team", label: "Team", icon: Settings },
+  { href: "/settings/organization", label: "Org", icon: Settings },
 ];
 
-export function NavLinks() {
+export function NavLinks({ showOrganization = true }: { showOrganization?: boolean }) {
   const pathname = usePathname();
+  const visibleLinks = showOrganization ? links : links.filter((link) => link.href !== "/settings/organization");
 
   return (
     <>
-      {links.map((link) => {
+      {visibleLinks.map((link) => {
         const Icon = link.icon;
         const isActive = pathname === link.href;
 

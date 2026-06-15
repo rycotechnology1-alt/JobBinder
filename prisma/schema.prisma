@@ -26,17 +26,48 @@ model Company {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users   User[]
-  jobs    Job[]
-  notes   Note[]
-  files   File[]
-  tasks   Task[]
-  invites Invite[]
+  users                 User[]
+  jobs                  Job[]
+  notes                 Note[]
+  files                 File[]
+  tasks                 Task[]
+  invites               Invite[]
+  memberships           CompanyMembership[]
+  orgUnits              OrgUnit[]
+  workspaces            Workspace[]
+  crews                 Crew[]
+  workspaceAccessGrants WorkspaceAccessGrant[]
+  jobAccessGrants       JobAccessGrant[]
 }
 
 enum Role {
+  OWNER
   ADMIN
   MEMBER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  DEACTIVATED
+  REMOVED
+}
+
+enum OrgUnitKind {
+  COMPANY
+  DIVISION
+}
+
+enum AccessPrincipalType {
+  MEMBER
+  CREW
+  ORG_UNIT
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  CANCELED
+  EXPIRED
 }
 
 model User {
@@ -50,9 +81,10 @@ model User {
   role           Role      @default(MEMBER)
   hashedPassword String?
 
-  company  Company?  @relation(fields: [companyId], references: [id])
-  accounts Account[]
-  sessions Session[]
+  company     Company?            @relation(fields: [companyId], references: [id])
+  memberships CompanyMembership[]
+  accounts    Account[]
+  sessions    Session[]
 
   jobsCreated   Job[]
   notes         Note[]
@@ -61,6 +93,31 @@ model User {
   tasksAssigned Task[]           @relation("AssignedTasks")
   exports       Export[]
   markupMarks   FileMarkupMark[]
+}
+
+model CompanyMembership {
+  id            String           @id @default(cuid())
+  companyId     String
+  userId        String
+  role          Role             @default(MEMBER)
+  status        MembershipStatus @default(ACTIVE)
+  joinedAt      DateTime         @default(now())
+  deactivatedAt DateTime?
+  removedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  company              Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crewMemberships      CrewMembership[]
+  orgUnitMemberships   OrgUnitMembership[]
+  workspaceGrantsMade  WorkspaceAccessGrant[] @relation("WorkspaceGrantCreator")
+  jobGrantsMade        JobAccessGrant[]       @relation("JobGrantCreator")
+  invitesSent          Invite[]               @relation("InviteSender")
+
+  @@unique([companyId, userId])
+  @@index([userId])
+  @@index([companyId, role, status])
 }
 
 model Account {
@@ -104,15 +161,178 @@ model Invite {
   companyId  String
   email      String
   role       Role      @default(MEMBER)
+  status     InviteStatus @default(PENDING)
   expiresAt  DateTime
   acceptedAt DateTime?
+  canceledAt DateTime?
+  invitedByMembershipId String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company             Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invitedByMembership CompanyMembership?          @relation("InviteSender", fields: [invitedByMembershipId], references: [id])
+  orgUnitAssignments  InviteOrgUnitAssignment[]
+  crewAssignments     InviteCrewAssignment[]
+  workspaceAssignments InviteWorkspaceAssignment[]
 
   @@unique([companyId, email])
   @@index([email])
+  @@index([companyId, status])
+}
+
+model OrgUnit {
+  id              String      @id @default(cuid())
+  companyId       String
+  parentOrgUnitId String?
+  name            String
+  kind            OrgUnitKind @default(DIVISION)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  company           Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent            OrgUnit?                   @relation("OrgUnitTree", fields: [parentOrgUnitId], references: [id])
+  children          OrgUnit[]                  @relation("OrgUnitTree")
+  workspaces        Workspace[]
+  crews             Crew[]
+  memberships       OrgUnitMembership[]
+  inviteAssignments InviteOrgUnitAssignment[]
+
+  @@index([companyId, kind])
+  @@index([parentOrgUnitId])
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  companyId String
+  orgUnitId String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company           Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orgUnit           OrgUnit                     @relation(fields: [orgUnitId], references: [id], onDelete: Cascade)
+  jobs              Job[]
+  accessGrants      WorkspaceAccessGrant[]
+  inviteAssignments InviteWorkspaceAssignment[]
+
+  @@index([companyId])
+  @@index([orgUnitId])
+}
+
+model Crew {
+  id        String   @id @default(cuid())
+  companyId String
+  orgUnitId String?
+  name      String
+  typeLabel String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company           Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orgUnit           OrgUnit?                 @relation(fields: [orgUnitId], references: [id])
+  memberships       CrewMembership[]
+  inviteAssignments InviteCrewAssignment[]
+
+  @@index([companyId])
+  @@index([orgUnitId])
+}
+
+model CrewMembership {
+  id                  String   @id @default(cuid())
+  crewId              String
+  companyMembershipId String
+  createdAt           DateTime @default(now())
+
+  crew              Crew              @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  companyMembership CompanyMembership @relation(fields: [companyMembershipId], references: [id], onDelete: Cascade)
+
+  @@unique([crewId, companyMembershipId])
+  @@index([companyMembershipId])
+}
+
+model OrgUnitMembership {
+  id                  String   @id @default(cuid())
+  orgUnitId           String
+  companyMembershipId String
+  createdAt           DateTime @default(now())
+
+  orgUnit           OrgUnit           @relation(fields: [orgUnitId], references: [id], onDelete: Cascade)
+  companyMembership CompanyMembership @relation(fields: [companyMembershipId], references: [id], onDelete: Cascade)
+
+  @@unique([orgUnitId, companyMembershipId])
+  @@index([companyMembershipId])
+}
+
+model WorkspaceAccessGrant {
+  id                    String              @id @default(cuid())
+  companyId             String
+  workspaceId           String
+  principalType         AccessPrincipalType
+  principalId           String
+  createdByMembershipId String?
+  createdAt             DateTime            @default(now())
+
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workspace           Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdByMembership CompanyMembership? @relation("WorkspaceGrantCreator", fields: [createdByMembershipId], references: [id])
+
+  @@unique([workspaceId, principalType, principalId])
+  @@index([companyId])
+  @@index([principalType, principalId])
+}
+
+model JobAccessGrant {
+  id                    String              @id @default(cuid())
+  companyId             String
+  jobId                 String
+  principalType         AccessPrincipalType
+  principalId           String
+  createdByMembershipId String?
+  createdAt             DateTime            @default(now())
+
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  job                 Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdByMembership CompanyMembership? @relation("JobGrantCreator", fields: [createdByMembershipId], references: [id])
+
+  @@unique([jobId, principalType, principalId])
+  @@index([companyId])
+  @@index([principalType, principalId])
+}
+
+model InviteOrgUnitAssignment {
+  id        String   @id @default(cuid())
+  inviteId  String
+  orgUnitId String
+  createdAt DateTime @default(now())
+
+  invite  Invite  @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  orgUnit OrgUnit @relation(fields: [orgUnitId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, orgUnitId])
+}
+
+model InviteCrewAssignment {
+  id        String   @id @default(cuid())
+  inviteId  String
+  crewId    String
+  createdAt DateTime @default(now())
+
+  invite Invite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  crew   Crew   @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, crewId])
+}
+
+model InviteWorkspaceAssignment {
+  id          String   @id @default(cuid())
+  inviteId    String
+  workspaceId String
+  createdAt   DateTime @default(now())
+
+  invite    Invite    @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, workspaceId])
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +351,7 @@ enum JobStatus {
 model Job {
   id                   String    @id @default(cuid())
   companyId            String
+  workspaceId          String?
   title                String
   jobNumber            String?
   poNumber             String?
@@ -149,13 +370,17 @@ model Job {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  company   Company @relation(fields: [companyId], references: [id])
-  createdBy User    @relation(fields: [createdById], references: [id])
+  company   Company    @relation(fields: [companyId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+  createdBy User       @relation(fields: [createdById], references: [id])
 
-  notes   Note[]
-  files   File[]
-  tasks   Task[]
-  exports Export[]
+  notes        Note[]
+  files        File[]
+  tasks        Task[]
+  exports      Export[]
+  accessGrants JobAccessGrant[]
+
+  @@index([workspaceId])
 }
 
 // ---------------------------------------------------------------------------

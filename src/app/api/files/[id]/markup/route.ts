@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { accessErrorResponse, requireCompanyUser } from "@/lib/current-user";
+import { accessErrorResponse, requireFileAccess } from "@/lib/current-user";
 import { parseMarkMutations, serializeMark, type DbMarkRow } from "@/lib/markup/serialize";
 
 async function findCompanyFile(id: string, companyId: string) {
@@ -24,8 +24,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireCompanyUser();
     const { id } = await params;
+    const { user } = await requireFileAccess(id);
     const file = await findCompanyFile(id, user.companyId);
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
@@ -43,8 +43,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireCompanyUser();
     const { id } = await params;
+    const { user } = await requireFileAccess(id);
     const file = await findCompanyFile(id, user.companyId);
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 });
 

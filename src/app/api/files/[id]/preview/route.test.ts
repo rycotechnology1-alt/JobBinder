@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const requireCompanyUser = vi.fn();
+const requireFileAccess = vi.fn();
 const accessErrorResponse = vi.fn();
 const fileFindFirst = vi.fn();
 const markCount = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
-  requireCompanyUser,
+  requireFileAccess,
   accessErrorResponse,
 }));
 
@@ -32,7 +32,10 @@ async function getPreview(id = "file-1") {
 describe("/api/files/[id]/preview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireFileAccess.mockResolvedValue({
+      user: { id: "user-1", companyId: "company-1" },
+      file: { id: "file-1" },
+    });
     accessErrorResponse.mockReturnValue(null);
     markCount.mockResolvedValue(0);
     fileFindFirst.mockResolvedValue({

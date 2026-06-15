@@ -5,21 +5,39 @@ import { formatDistanceToNow } from "date-fns";
 import { requirePageCompanyUser } from "@/lib/current-user";
 import { InboxUploadButton } from "@/components/InboxUploadButton";
 import { InboxItemActions } from "@/components/InboxItemActions";
+import { buildAccessibleJobWhere, isAccountManagerRole } from "@/lib/account-access";
 
 export default async function InboxPage() {
   const user = await requirePageCompanyUser();
 
   const [notes, files, jobs] = await Promise.all([
     prisma.note.findMany({
-      where: { companyId: user.companyId, jobId: null },
+      where: {
+        companyId: user.companyId,
+        jobId: null,
+        ...(isAccountManagerRole(user.role) ? {} : { authorId: user.id }),
+      },
       orderBy: { createdAt: "desc" },
     }),
     prisma.file.findMany({
-      where: { companyId: user.companyId, jobId: null },
+      where: {
+        companyId: user.companyId,
+        jobId: null,
+        ...(isAccountManagerRole(user.role) ? {} : { uploaderId: user.id }),
+      },
       orderBy: { createdAt: "desc" },
     }),
     prisma.job.findMany({
-      where: { companyId: user.companyId, status: { not: "COMPLETE" } },
+      where: {
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
+        status: { not: "COMPLETE" },
+      },
       orderBy: [
         { priority: "desc" },
         { updatedAt: "desc" },

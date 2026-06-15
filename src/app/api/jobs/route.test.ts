@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireCompanyUser = vi.fn();
 const accessErrorResponse = vi.fn();
 const findMany = vi.fn();
-const findFirst = vi.fn();
+const jobFindFirst = vi.fn();
+const workspaceFindFirst = vi.fn();
+const create = vi.fn();
 const update = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
@@ -16,9 +18,12 @@ vi.mock("@/lib/prisma", () => ({
   default: {
     job: {
       findMany,
-      findFirst,
-      create: vi.fn(),
+      findFirst: jobFindFirst,
+      create,
       update,
+    },
+    workspace: {
+      findFirst: workspaceFindFirst,
     },
   },
 }));
@@ -34,6 +39,14 @@ async function patchJob(body: unknown) {
 async function getJobs(url = "http://localhost/api/jobs") {
   const { GET } = await import("./route");
   return GET(new NextRequest(url));
+}
+
+async function postJob(body: unknown) {
+  const { POST } = await import("./route");
+  return POST(new NextRequest("http://localhost/api/jobs", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }));
 }
 
 describe("GET /api/jobs", () => {
@@ -96,7 +109,9 @@ describe("PATCH /api/jobs", () => {
     vi.clearAllMocks();
     requireCompanyUser.mockResolvedValue({ id: "admin-1", companyId: "company-1", role: "ADMIN" });
     accessErrorResponse.mockReturnValue(null);
-    findFirst.mockResolvedValue({ id: "job-1" });
+    jobFindFirst.mockResolvedValue({ id: "job-1" });
+    workspaceFindFirst.mockResolvedValue({ id: "workspace-1" });
+    create.mockResolvedValue({ id: "job-1", title: "New job", workspaceId: "workspace-1" });
     update.mockResolvedValue({
       id: "job-1",
       title: "Renovation",
@@ -126,7 +141,7 @@ describe("PATCH /api/jobs", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(findFirst).toHaveBeenCalledWith({
+    expect(jobFindFirst).toHaveBeenCalledWith({
       where: { id: "job-1", companyId: "company-1" },
       select: { id: true },
     });
@@ -150,7 +165,7 @@ describe("PATCH /api/jobs", () => {
     });
   });
 
-  it("lets members update basic job fields without management fields", async () => {
+  it("rejects member attempts to update basic job fields", async () => {
     requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1", role: "MEMBER" });
 
     const response = await patchJob({
@@ -159,14 +174,9 @@ describe("PATCH /api/jobs", () => {
       customerName: " Acme ",
     });
 
-    expect(response.status).toBe(200);
-    expect(update).toHaveBeenCalledWith({
-      where: { id: "job-1" },
-      data: {
-        title: "Updated title",
-        customerName: "Acme",
-      },
-    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Admin access required" });
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("rejects member attempts to update management fields", async () => {
@@ -208,6 +218,40 @@ describe("PATCH /api/jobs", () => {
     });
   });
 
+  it("creates jobs only for managers and requires a workspace", async () => {
+    const missingWorkspace = await postJob({ title: "No workspace" });
+    expect(missingWorkspace.status).toBe(400);
+    expect(await missingWorkspace.json()).toEqual({ error: "Workspace is required" });
+
+    const response = await postJob({
+      title: "New job",
+      workspaceId: "workspace-1",
+      customerName: "Acme",
+    });
+
+    expect(response.status).toBe(201);
+    expect(workspaceFindFirst).toHaveBeenCalledWith({
+      where: { id: "workspace-1", companyId: "company-1" },
+      select: { id: true },
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        companyId: "company-1",
+        workspaceId: "workspace-1",
+        title: "New job",
+        createdById: "admin-1",
+      }),
+    });
+
+    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1", role: "MEMBER" });
+    const memberResponse = await postJob({
+      title: "Member job",
+      workspaceId: "workspace-1",
+    });
+    expect(memberResponse.status).toBe(403);
+    expect(await memberResponse.json()).toEqual({ error: "Admin access required" });
+  });
+
   it("rejects missing id and invalid management fields", async () => {
     const missingId = await patchJob({ title: "No id" });
     expect(missingId.status).toBe(400);
@@ -231,7 +275,7 @@ describe("PATCH /api/jobs", () => {
     expect(invalidEmail.status).toBe(400);
     expect(await invalidEmail.json()).toEqual({ error: "Invalid contact email" });
 
-    findFirst.mockResolvedValueOnce(null);
+    jobFindFirst.mockResolvedValueOnce(null);
     const missingJob = await patchJob({ id: "other-job", title: "Other" });
     expect(missingJob.status).toBe(404);
     expect(await missingJob.json()).toEqual({ error: "Job not found" });

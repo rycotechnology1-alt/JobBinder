@@ -15,7 +15,7 @@ export function SignupForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">
-            Company name
+            Account name
           </label>
           <Input name="companyName" required placeholder="Acme Construction" />
           {state.fieldErrors?.companyName && (
@@ -24,7 +24,7 @@ export function SignupForm() {
         </div>
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">
-            Admin name
+            Owner name
           </label>
           <Input name="adminName" required placeholder="Sam Builder" autoComplete="name" />
           {state.fieldErrors?.adminName && (
@@ -35,7 +35,7 @@ export function SignupForm() {
 
       <div>
         <label className="block text-sm font-medium text-zinc-300 mb-1">
-          Admin email
+          Owner email
         </label>
         <Input name="email" type="email" required placeholder="owner@company.com" autoComplete="email" />
         {state.fieldErrors?.email && (
@@ -71,7 +71,7 @@ export function SignupForm() {
       )}
 
       <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? "Creating account..." : "Create company profile"}
+        {pending ? "Creating account..." : "Create owner account"}
       </Button>
     </form>
   );

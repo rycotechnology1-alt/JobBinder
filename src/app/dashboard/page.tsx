@@ -4,6 +4,7 @@ import { CreateJobDialog } from "@/components/CreateJobDialog";
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { DashboardJobCard } from "@/components/DashboardJobCard";
 import { requirePageCompanyUser } from "@/lib/current-user";
+import { buildAccessibleJobWhere, isAccountManagerRole } from "@/lib/account-access";
 import {
   getDashboardJobSearchWhere,
   getDashboardStatusFilterWhere,
@@ -28,23 +29,36 @@ async function getCompanyAndJobs({
   status: string;
 }) {
   const user = await requirePageCompanyUser();
-  const jobs = await prisma.job.findMany({
-    where: {
-      companyId: user.companyId,
-      ...getDashboardStatusFilterWhere(status),
-      ...getDashboardJobSearchWhere(search),
-    },
-    orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
-  });
+  const [jobs, workspaces] = await Promise.all([
+    prisma.job.findMany({
+      where: {
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
+        ...getDashboardStatusFilterWhere(status),
+        ...getDashboardJobSearchWhere(search),
+      },
+      orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+    }),
+    prisma.workspace.findMany({
+      where: { companyId: user.companyId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
 
-  return { company: user.company, jobs };
+  return { company: user.company, jobs, workspaces, canManageJobs: isAccountManagerRole(user.role) };
 }
 
 export default async function Dashboard({ searchParams }: { searchParams: DashboardSearchParams }) {
   const params = await searchParams;
   const currentSearch = normalizeDashboardSearch(firstSearchParamValue(params.search));
   const currentStatus = normalizeDashboardStatusFilter(firstSearchParamValue(params.status));
-  const { company, jobs } = await getCompanyAndJobs({
+  const { company, jobs, workspaces, canManageJobs } = await getCompanyAndJobs({
     search: currentSearch,
     status: currentStatus,
   });
@@ -68,7 +82,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Dashbo
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <CreateJobDialog />
+        {canManageJobs && <CreateJobDialog workspaces={workspaces} />}
         {jobs.map((job) => <DashboardJobCard key={job.id} job={job} />)}
       </div>
     </div>

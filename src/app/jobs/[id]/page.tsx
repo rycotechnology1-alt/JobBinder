@@ -9,13 +9,23 @@ import { JobFolderTabs } from "@/components/JobFolderTabs";
 import { ManageJobDialog } from "@/components/ManageJobDialog";
 import { JobStatusCard } from "@/components/JobStatusCard";
 import { JobOverviewCard } from "@/components/JobOverviewCard";
+import { buildAccessibleJobWhere, isAccountManagerRole } from "@/lib/account-access";
 
 export default async function JobFolder({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageCompanyUser();
 
   const job = await prisma.job.findFirst({
-    where: { id, companyId: user.companyId },
+    where: {
+      id,
+      ...buildAccessibleJobWhere({
+        companyId: user.companyId,
+        membershipId: user.membershipId,
+        role: user.role,
+        crewIds: user.crewIds,
+        orgUnitIds: user.orgUnitIds,
+      }),
+    },
     include: {
       notes: {
         orderBy: { createdAt: "desc" },
@@ -28,7 +38,7 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
 
   if (!job) return notFound();
 
-  const isAdmin = user.role === "ADMIN";
+  const isAdmin = isAccountManagerRole(user.role);
 
   const feedNotes = job.notes.map((note) => ({
     id: note.id,

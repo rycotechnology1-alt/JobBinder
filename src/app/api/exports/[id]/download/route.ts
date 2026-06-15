@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import {
   accessErrorResponse,
-  requireCompanyUser,
+  requireJobAccess,
 } from "@/lib/current-user";
 import { downloadR2Object } from "@/lib/r2";
 
@@ -11,7 +11,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireCompanyUser();
     const { id: exportId } = await params;
 
     // Find the export record
@@ -24,10 +23,7 @@ export async function GET(
       return NextResponse.json({ error: "Export package not found" }, { status: 404 });
     }
 
-    // Verify company scope
-    if (exportRecord.job.companyId !== user.companyId) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
+    await requireJobAccess(exportRecord.jobId);
 
     if (exportRecord.status !== "READY" || !exportRecord.storageKey) {
       return NextResponse.json(

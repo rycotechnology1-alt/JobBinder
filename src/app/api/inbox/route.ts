@@ -4,6 +4,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { isAccountManagerRole } from "@/lib/account-access";
 
 export async function GET() {
   try {
@@ -12,12 +13,20 @@ export async function GET() {
     // Fetch notes and files where jobId is null
     const [notes, files] = await Promise.all([
       prisma.note.findMany({
-        where: { companyId: user.companyId, jobId: null },
+        where: {
+          companyId: user.companyId,
+          jobId: null,
+          ...(isAccountManagerRole(user.role) ? {} : { authorId: user.id }),
+        },
         orderBy: { createdAt: "desc" },
         include: { author: { select: { name: true } } }
       }),
       prisma.file.findMany({
-        where: { companyId: user.companyId, jobId: null },
+        where: {
+          companyId: user.companyId,
+          jobId: null,
+          ...(isAccountManagerRole(user.role) ? {} : { uploaderId: user.id }),
+        },
         orderBy: { createdAt: "desc" },
         include: { uploader: { select: { name: true } } }
       })

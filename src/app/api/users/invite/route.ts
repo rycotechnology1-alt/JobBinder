@@ -1,98 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Role } from "@prisma/client";
-import prisma from "@/lib/prisma";
-import { canInviteMoreUsers, normalizeInviteEmail } from "@/lib/auth-rules";
-import { createOneTimeToken } from "@/lib/auth-tokens";
-import { sendInviteEmail } from "@/lib/auth-email";
 import {
   accessErrorResponse,
-  requireAdminUser,
+  requireCompanyUser,
 } from "@/lib/current-user";
+import { createOrganizationInvite } from "@/lib/organization";
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireAdminUser();
-    const { email, role } = await req.json();
+    const user = await requireCompanyUser();
+    const body = await req.json();
+    const { email } = body;
 
     if (!email || typeof email !== "string") {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
     }
 
-    const inviteRole = role === "ADMIN" ? Role.ADMIN : Role.MEMBER;
-    const normalizedEmail = normalizeInviteEmail(email);
-    const company = await prisma.company.findUnique({
-      where: { id: user.companyId },
-      include: { _count: { select: { users: true } } },
-    });
-
-    if (!company) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
-    }
-
-    const pendingInviteCount = await prisma.invite.count({
-      where: {
-        companyId: user.companyId,
-        acceptedAt: null,
-        expiresAt: { gt: new Date() },
-        email: { not: normalizedEmail },
-      },
-    });
-
-    const inviteLimit = canInviteMoreUsers({
-      plan: company.plan,
-      userCount: company._count.users,
-    });
-
-    if (!inviteLimit.allowed) {
-      return NextResponse.json({ error: inviteLimit.reason }, { status: 403 });
-    }
-
-    const totalSeatsAfterInvite = company._count.users + pendingInviteCount;
-    const pendingLimit = canInviteMoreUsers({
-      plan: company.plan,
-      userCount: totalSeatsAfterInvite,
-    });
-
-    if (!pendingLimit.allowed) {
-      return NextResponse.json({ error: pendingLimit.reason }, { status: 403 });
-    }
-
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-
-    const invite = await prisma.invite.upsert({
-      where: {
-        companyId_email: {
-          companyId: user.companyId,
-          email: normalizedEmail,
-        },
-      },
-      create: {
-        companyId: user.companyId,
-        email: normalizedEmail,
-        role: inviteRole,
-        expiresAt,
-      },
-      update: {
-        role: inviteRole,
-        expiresAt,
-        acceptedAt: null,
-      },
-    });
-
-    const token = await createOneTimeToken({
-      prisma,
-      purpose: "invite",
-      key: invite.id,
-      maxAgeMs: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    await sendInviteEmail({
-      email: normalizedEmail,
-      inviteId: invite.id,
-      token,
-      companyName: company.name,
-    });
+    await createOrganizationInvite(user, body);
 
     return NextResponse.json({
       success: true,

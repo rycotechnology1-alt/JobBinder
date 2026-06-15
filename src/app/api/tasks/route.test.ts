@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireCompanyUser = vi.fn();
 const accessErrorResponse = vi.fn();
 const jobFindFirst = vi.fn();
-const userFindFirst = vi.fn();
+const companyMembershipFindFirst = vi.fn();
 const taskFindFirst = vi.fn();
 const taskCreate = vi.fn();
 const taskUpdate = vi.fn();
@@ -19,8 +19,8 @@ vi.mock("@/lib/prisma", () => ({
     job: {
       findFirst: jobFindFirst,
     },
-    user: {
-      findFirst: userFindFirst,
+    companyMembership: {
+      findFirst: companyMembershipFindFirst,
     },
     task: {
       findFirst: taskFindFirst,
@@ -49,11 +49,18 @@ async function patchTask(body: unknown) {
 describe("/api/tasks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({
+      id: "user-1",
+      companyId: "company-1",
+      membershipId: "membership-1",
+      role: "ADMIN",
+      crewIds: [],
+      orgUnitIds: [],
+    });
     accessErrorResponse.mockReturnValue(null);
     jobFindFirst.mockResolvedValue({ id: "job-1" });
-    userFindFirst.mockResolvedValue({ id: "user-2" });
-    taskFindFirst.mockResolvedValue({ id: "task-1" });
+    companyMembershipFindFirst.mockResolvedValue({ id: "membership-2" });
+    taskFindFirst.mockResolvedValue({ id: "task-1", jobId: "job-1" });
     taskCreate.mockResolvedValue({
       id: "task-1",
       title: "Install trim",
@@ -158,7 +165,7 @@ describe("/api/tasks", () => {
     expect(response.status).toBe(200);
     expect(taskFindFirst).toHaveBeenCalledWith({
       where: { id: "task-1", companyId: "company-1" },
-      select: { id: true },
+      select: { id: true, jobId: true },
     });
     expect(taskUpdate).toHaveBeenCalledWith({
       where: { id: "task-1" },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { accessErrorResponse, requireCompanyUser } from "@/lib/current-user";
+import { accessErrorResponse, requireFileAccess } from "@/lib/current-user";
 import { downloadR2Object } from "@/lib/r2";
 import { ensureFileMarkupPdf, markupFilename } from "@/lib/markup/generate";
 
@@ -9,8 +9,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireCompanyUser();
     const { id } = await params;
+    const { user } = await requireFileAccess(id);
 
     const file = await prisma.file.findFirst({
       where: { id, companyId: user.companyId },

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const requireCompanyUser = vi.fn();
+const requireFileAccess = vi.fn();
 const accessErrorResponse = vi.fn();
 const fileFindFirst = vi.fn();
 const downloadR2Object = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
-  requireCompanyUser,
+  requireFileAccess,
   accessErrorResponse,
 }));
 
@@ -33,7 +33,10 @@ async function getContent(id = "file-1", query = "") {
 describe("GET /api/files/[id]/content", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireFileAccess.mockResolvedValue({
+      user: { id: "user-1", companyId: "company-1" },
+      file: { id: "file-1" },
+    });
     accessErrorResponse.mockReturnValue(null);
     fileFindFirst.mockResolvedValue({
       id: "file-1",
@@ -85,7 +88,7 @@ describe("GET /api/files/[id]/content", () => {
   });
 
   it("returns auth errors before storage access", async () => {
-    requireCompanyUser.mockRejectedValueOnce(new Error("Unauthorized"));
+    requireFileAccess.mockRejectedValueOnce(new Error("Unauthorized"));
     accessErrorResponse.mockReturnValueOnce(
       NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     );

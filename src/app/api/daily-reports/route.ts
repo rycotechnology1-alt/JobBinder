@@ -5,6 +5,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { buildAccessibleJobWhere } from "@/lib/account-access";
 
 function parseReportDate(value: unknown) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -54,7 +55,16 @@ export async function POST(req: NextRequest) {
     }
 
     const job = await prisma.job.findFirst({
-      where: { id: jobId, companyId: user.companyId },
+      where: {
+        id: jobId,
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
+      },
       select: { id: true },
     });
 

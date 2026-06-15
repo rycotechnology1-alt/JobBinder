@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import prisma from "@/lib/prisma";
 import {
   accessErrorResponse,
-  requireCompanyUser,
+  requireFileAccess,
 } from "@/lib/current-user";
 import { downloadR2Object } from "@/lib/r2";
 import { getFilePreviewInfo } from "@/lib/file-preview";
@@ -31,8 +31,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireCompanyUser();
     const { id } = await params;
+    const { user } = await requireFileAccess(id);
 
     const file = await prisma.file.findFirst({
       where: { id, companyId: user.companyId },

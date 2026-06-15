@@ -2,13 +2,13 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
 
-const requireCompanyUser = vi.fn();
+const requireFileAccess = vi.fn();
 const accessErrorResponse = vi.fn();
 const fileFindFirst = vi.fn();
 const downloadR2Object = vi.fn();
 
 vi.mock("@/lib/current-user", () => ({
-  requireCompanyUser,
+  requireFileAccess,
   accessErrorResponse,
 }));
 
@@ -43,7 +43,10 @@ async function getSpreadsheetPreview(id = "file-1") {
 describe("GET /api/files/[id]/spreadsheet-preview", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireFileAccess.mockResolvedValue({
+      user: { id: "user-1", companyId: "company-1" },
+      file: { id: "file-1" },
+    });
     accessErrorResponse.mockReturnValue(null);
     fileFindFirst.mockResolvedValue({
       id: "file-1",

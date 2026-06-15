@@ -27,10 +27,10 @@ export default async function LandingPage() {
           </div>
           <div className="space-y-4">
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white">
-              Create your JobBinder company profile
+              Create your JobBinder owner account
             </h1>
             <p className="text-lg text-zinc-300 max-w-2xl">
-              Account creation sets up a shared company workspace. The person who creates it becomes the admin and can invite employees to work inside the company&apos;s job binders.
+              Account creation sets up a global company account with a default workspace. The person who creates it becomes the owner and can add admins, employees, divisions, crews, and job binders.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
@@ -38,7 +38,7 @@ export default async function LandingPage() {
               href="/sign-in"
               className="inline-flex h-11 items-center justify-center rounded-lg border border-zinc-700 px-4 text-sm font-medium text-zinc-200 hover:bg-zinc-800"
             >
-              Sign in to an existing company
+              Sign in to an existing account
             </Link>
           </div>
         </div>
@@ -48,14 +48,14 @@ export default async function LandingPage() {
             <Building2 className="text-brand-light" size={22} />
             <h2 className="mt-3 font-semibold text-white">Company first</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Signup creates the company profile, not just an individual account.
+              Signup creates the global account, not just an individual login.
             </p>
           </div>
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
             <Users className="text-emerald-300" size={22} />
-            <h2 className="mt-3 font-semibold text-white">Admin controlled</h2>
+            <h2 className="mt-3 font-semibold text-white">Owner controlled</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              The admin invites employees and manages who can access the crew workspace.
+              Owners and admins invite employees and decide which crews can access each workspace.
             </p>
           </div>
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
@@ -71,9 +71,9 @@ export default async function LandingPage() {
       <Card>
         <CardContent className="p-6 md:p-8 space-y-5">
           <div>
-            <h2 className="text-2xl font-bold text-white">Create admin account</h2>
+            <h2 className="text-2xl font-bold text-white">Create owner account</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Use this only if you are setting up a new company profile.
+              Use this only if you are setting up a new global company account.
             </p>
           </div>
           <SignupForm />

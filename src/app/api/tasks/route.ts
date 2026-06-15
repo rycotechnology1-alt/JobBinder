@@ -5,6 +5,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { buildAccessibleJobWhere } from "@/lib/account-access";
 import { isValidTaskStatus, isValidTaskType } from "@/lib/job-folder";
 
 export async function POST(req: NextRequest) {
@@ -37,7 +38,16 @@ export async function POST(req: NextRequest) {
     }
 
     const job = await prisma.job.findFirst({
-      where: { id: jobId, companyId: user.companyId },
+      where: {
+        id: jobId,
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
+      },
       select: { id: true },
     });
 
@@ -46,8 +56,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (assignedToId) {
-      const assignee = await prisma.user.findFirst({
-        where: { id: assignedToId, companyId: user.companyId },
+      const assignee = await prisma.companyMembership.findFirst({
+        where: { userId: assignedToId, companyId: user.companyId, status: "ACTIVE" },
         select: { id: true },
       });
 
@@ -97,10 +107,28 @@ export async function PATCH(req: NextRequest) {
 
     const existingTask = await prisma.task.findFirst({
       where: { id, companyId: user.companyId },
-      select: { id: true },
+      select: { id: true, jobId: true },
     });
 
     if (!existingTask) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+
+    const job = await prisma.job.findFirst({
+      where: {
+        id: existingTask.jobId,
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
+      },
+      select: { id: true },
+    });
+
+    if (!job) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 

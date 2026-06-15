@@ -6,7 +6,9 @@ declare module "next-auth" {
     user: {
       id: string;
       companyId: string | null;
+      membershipId: string | null;
       role: Role;
+      hasActiveMembership: boolean;
       emailVerified: Date | null;
     } & DefaultSession["user"];
   }

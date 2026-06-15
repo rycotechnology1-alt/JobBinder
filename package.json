@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "backfill:organization": "node prisma/backfill-organization.mjs",
+    "backfill:organization:apply": "node prisma/backfill-organization.mjs --apply"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

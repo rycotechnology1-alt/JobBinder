@@ -8,7 +8,16 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Plus } from "lucide-react";
 
-export function CreateJobDialog() {
+type WorkspaceOption = {
+  id: string;
+  name: string;
+};
+
+type Props = {
+  workspaces: WorkspaceOption[];
+};
+
+export function CreateJobDialog({ workspaces }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
@@ -20,6 +29,7 @@ export function CreateJobDialog() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title");
     const customerName = formData.get("customerName");
+    const workspaceId = formData.get("workspaceId");
     
     try {
       const res = await fetch("/api/jobs", {
@@ -28,6 +38,7 @@ export function CreateJobDialog() {
         body: JSON.stringify({
           title,
           customerName,
+          workspaceId,
         }),
       });
       
@@ -61,6 +72,20 @@ export function CreateJobDialog() {
 
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Start New Project">
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Workspace *</label>
+            <select
+              name="workspaceId"
+              required
+              defaultValue={workspaces[0]?.id ?? ""}
+              className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
+            >
+              {workspaces.length === 0 && <option value="">Create a workspace first</option>}
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-sm font-medium text-zinc-400 mb-1">Job Title *</label>
             <Input name="title" required placeholder="e.g. Downtown Plumbing Fitout" autoFocus />

@@ -53,7 +53,14 @@ async function postFile(body: unknown) {
 describe("PATCH /api/files", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({
+      id: "user-1",
+      companyId: "company-1",
+      membershipId: "membership-1",
+      role: "ADMIN",
+      crewIds: [],
+      orgUnitIds: [],
+    });
     accessErrorResponse.mockReturnValue(null);
     jobFindFirst.mockResolvedValue({ id: "job-1" });
     fileFindFirst.mockResolvedValue({ id: "file-1" });
@@ -100,7 +107,14 @@ describe("PATCH /api/files", () => {
 describe("POST /api/files", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireCompanyUser.mockResolvedValue({ id: "user-1", companyId: "company-1" });
+    requireCompanyUser.mockResolvedValue({
+      id: "user-1",
+      companyId: "company-1",
+      membershipId: "membership-1",
+      role: "ADMIN",
+      crewIds: [],
+      orgUnitIds: [],
+    });
     accessErrorResponse.mockReturnValue(null);
     jobFindFirst.mockResolvedValue({ id: "job-1" });
     fileFindFirst.mockResolvedValue(null);

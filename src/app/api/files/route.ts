@@ -4,6 +4,7 @@ import {
   accessErrorResponse,
   requireCompanyUser,
 } from "@/lib/current-user";
+import { buildAccessibleJobWhere, isAccountManagerRole } from "@/lib/account-access";
 import { validateFileUploadInput } from "@/lib/asset-categories";
 import { normalizeFileDisplayName } from "@/lib/job-folder";
 import { isCompanyScopedObjectKey } from "@/lib/r2";
@@ -41,7 +42,16 @@ export async function POST(req: NextRequest) {
 
     if (jobId) {
       const job = await prisma.job.findFirst({
-        where: { id: jobId, companyId: user.companyId },
+        where: {
+          id: jobId,
+          ...buildAccessibleJobWhere({
+            companyId: user.companyId,
+            membershipId: user.membershipId,
+            role: user.role,
+            crewIds: user.crewIds,
+            orgUnitIds: user.orgUnitIds,
+          }),
+        },
         select: { id: true },
       });
 
@@ -105,7 +115,16 @@ export async function PATCH(req: NextRequest) {
     }
 
     const job = await prisma.job.findFirst({
-      where: { id: jobId, companyId: user.companyId },
+      where: {
+        id: jobId,
+        ...buildAccessibleJobWhere({
+          companyId: user.companyId,
+          membershipId: user.membershipId,
+          role: user.role,
+          crewIds: user.crewIds,
+          orgUnitIds: user.orgUnitIds,
+        }),
+      },
       select: { id: true },
     });
 
@@ -114,7 +133,11 @@ export async function PATCH(req: NextRequest) {
     }
 
     const file = await prisma.file.findFirst({
-      where: { id, companyId: user.companyId },
+      where: {
+        id,
+        companyId: user.companyId,
+        ...(isAccountManagerRole(user.role) ? {} : { uploaderId: user.id }),
+      },
       select: { id: true },
     });
 

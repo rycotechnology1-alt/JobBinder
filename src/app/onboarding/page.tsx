@@ -26,9 +26,9 @@ export default async function OnboardingPage() {
               <Building2 size={24} className="text-emerald-300" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Create your company</h1>
+              <h1 className="text-2xl font-bold text-white">Create your owner account</h1>
               <p className="text-sm text-zinc-400">
-                This sets up your shared job folders and makes you the admin.
+                This sets up your global account, default workspace, and owner access.
               </p>
             </div>
           </div>
@@ -36,7 +36,7 @@ export default async function OnboardingPage() {
           <form action={createCompany} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-zinc-400 mb-1">
-                Company name
+                Account name
               </label>
               <Input
                 name="companyName"
@@ -46,7 +46,7 @@ export default async function OnboardingPage() {
               />
             </div>
             <Button type="submit" className="w-full">
-              Create company
+              Create owner account
             </Button>
           </form>
         </CardContent>
