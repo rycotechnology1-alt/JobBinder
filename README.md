@@ -18,7 +18,7 @@ JobBinder is a mobile-first job management application designed for small constr
 As of the completion of the MVP 8-Step Roadmap, here is the exact state of the repository:
 
 ### ✅ What is Done (Fully Functional)
-*   **Database Schema:** Complete Prisma schema deployed to Neon (Companies, Users, Auth.js sessions/tokens, Invites, Jobs, Notes, Files, Tasks).
+*   **Database Schema:** Complete Prisma schema deployed to Neon and managed with Prisma Migrate (Companies, Users, Auth.js sessions/tokens, Invites, Jobs, Notes, Files, Tasks).
 *   **Authentication & Access:** Auth.js email/password sign-in is wired through credentials auth. New admins create a company profile during signup, verify their email through Resend, and app pages/API routes derive company/user access from the session.
 *   **Team Settings:** Admins can view crew members and send email invites from `/settings/team`. Free companies are limited to 5 users.
 *   **Core API Surface:** `GET/POST` REST routes for Jobs, Notes, Tasks, and the Inbox are scoped to the authenticated user's company.
@@ -46,11 +46,16 @@ As of the completion of the MVP 8-Step Roadmap, here is the exact state of the r
 2. **Environment Variables:**
    Rename `.env.example` to `.env` and fill in your Neon Database URL, Cloudflare R2 credentials, `AUTH_SECRET`, and Resend API key (`AUTH_RESEND_KEY` or `RESEND_API_KEY`).
 
-3. **Database Sync:**
-   Push the schema to your Neon database and generate the Prisma Client:
+3. **Database Migrations:**
+   Apply committed migrations to your database and generate the Prisma Client:
    ```bash
-   npx prisma db push
-   npx prisma generate
+   npm run migrate:deploy
+   npm run prisma:generate
+   ```
+
+   For future schema changes, edit `prisma/schema.prisma` and create a migration instead of using `db push`:
+   ```bash
+   npm run migrate:dev -- --name <change-name>
    ```
 
 4. **Run the server:**
@@ -58,3 +63,21 @@ As of the completion of the MVP 8-Step Roadmap, here is the exact state of the r
    npm run dev
    ```
    Open [http://localhost:3000](http://localhost:3000) to view the app.
+
+## Database Deployment
+
+This project has a baseline migration at `prisma/migrations/0_init`. The current Neon database has already had this baseline marked as applied. For any other existing database that already matches `prisma/schema.prisma`, mark the baseline as applied once before deploying future migrations:
+
+```bash
+npx prisma migrate resolve --applied 0_init --schema prisma/schema.prisma
+```
+
+New empty databases can run `npm run migrate:deploy` to create the full schema from the baseline migration.
+
+Vercel builds are configured through `vercel.json` to run:
+
+```bash
+npm run vercel-build
+```
+
+The Vercel build script runs `prisma generate` for every build, runs `prisma migrate deploy` only when `VERCEL_ENV=production`, and then runs `next build`. If the Vercel project has a manual Build Command override in the dashboard, set it to `npm run vercel-build` or clear the override so `vercel.json` is used.

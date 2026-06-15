@@ -5,9 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "prisma:generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
     "backfill:organization": "node prisma/backfill-organization.mjs",
     "backfill:organization:apply": "node prisma/backfill-organization.mjs --apply"
   },
