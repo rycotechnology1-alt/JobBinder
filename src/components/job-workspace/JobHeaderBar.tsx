@@ -3,8 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronUp, Menu } from "lucide-react";
-import { formatTargetCompletionDate, getJobStatusDisplay } from "@/lib/job-management";
-import { cn } from "@/lib/utils";
+import { formatTargetCompletionDate } from "@/lib/job-management";
 import { JobActions } from "@/components/JobActions";
 import { JobStatusCard } from "@/components/JobStatusCard";
 import { JobOverviewCard } from "@/components/JobOverviewCard";
@@ -37,7 +36,6 @@ export function JobHeaderBar({ job, isAdmin, onOpenMobileNav }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
 
-  const statusDisplay = getJobStatusDisplay(job.status);
   const dueLabel = formatTargetCompletionDate(job.targetCompletionDate);
 
   return (
@@ -67,15 +65,7 @@ export function JobHeaderBar({ job, isAdmin, onOpenMobileNav }: Props) {
           aria-label={expanded ? "Hide job details" : "Show job details"}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/50"
         >
-          <span className="truncate text-base font-bold text-zinc-50 md:text-lg">{job.title}</span>
-          <span
-            className={cn(
-              "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-              statusDisplay.badgeClassName,
-            )}
-          >
-            {statusDisplay.label}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-base font-bold text-zinc-50 md:text-lg">{job.title}</span>
           {dueLabel && <span className="hidden shrink-0 text-xs text-zinc-500 sm:inline">· {dueLabel}</span>}
           {expanded ? (
             <ChevronUp size={16} className="shrink-0 text-zinc-500" />

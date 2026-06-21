@@ -1,7 +1,8 @@
-const CACHE_VERSION = "jobbinder-v1";
+const CACHE_VERSION = "jobbinder-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const APP_SHELL_URLS = ["/"];
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -28,6 +29,7 @@ function shouldBypass(request, url) {
   if (url.origin !== self.location.origin) return true;
   if (url.pathname.startsWith("/api/")) return true;
   if (url.pathname === "/sw.js") return true;
+  if (LOCAL_HOSTNAMES.has(self.location.hostname)) return true;
   return false;
 }
 

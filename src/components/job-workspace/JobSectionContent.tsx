@@ -11,6 +11,7 @@ import { FilePreview } from "@/components/FilePreview";
 import { JobFeed } from "@/components/JobFeed";
 import { JobPhotoGrid } from "@/components/job-workspace/JobPhotoGrid";
 import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
+import type { FileRenderMode } from "@/lib/file-preview";
 
 export type JobSection = "FEED" | "FILES" | "PHOTOS" | "DAILY_REPORTS" | "TASKS";
 
@@ -32,6 +33,9 @@ export type FileItem = {
   originalName: string;
   name: string | null;
   category: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  renderMode?: FileRenderMode;
   noteId: string | null;
   taskId?: string | null;
   markupMarkId?: string | null;
@@ -217,6 +221,9 @@ export function JobSectionContent({ activeSection, notes, files, tasks: initialT
                   type={file.type}
                   filename={file.name || file.originalName}
                   category={file.category}
+                  contentType={file.contentType}
+                  sizeBytes={file.sizeBytes}
+                  renderMode={file.renderMode}
                   canDelete={isAdmin}
                   onDelete={refreshAfterDelete}
                 />
@@ -375,6 +382,9 @@ function TaskRow({
                     type={file.type}
                     filename={file.name || file.originalName}
                     category={file.category}
+                    contentType={file.contentType}
+                    sizeBytes={file.sizeBytes}
+                    renderMode={file.renderMode}
                     canDelete={isAdmin}
                     onDelete={onDeleted}
                   />
@@ -501,6 +511,9 @@ function DailyReportCard({
                 type={file.type}
                 filename={file.name || file.originalName}
                 category={file.category}
+                contentType={file.contentType}
+                sizeBytes={file.sizeBytes}
+                renderMode={file.renderMode}
                 canDelete={isAdmin}
                 onDelete={onDeleted}
               />

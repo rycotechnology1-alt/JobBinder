@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "@/components/FilePreview";
 import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
+import type { FileRenderMode } from "@/lib/file-preview";
 
 type NoteItem = {
   id: string;
@@ -26,6 +27,9 @@ type FileItem = {
   originalName: string;
   name: string | null;
   category: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  renderMode?: FileRenderMode;
   noteId: string | null;
   taskId?: string | null;
   markupMarkId?: string | null;
@@ -115,6 +119,9 @@ export function JobFeed({ notes, files, isAdmin, onItemDeleted }: Props) {
                     type={item.type}
                     filename={item.name || item.originalName}
                     category={item.category}
+                    contentType={item.contentType}
+                    sizeBytes={item.sizeBytes}
+                    renderMode={item.renderMode}
                     canDelete={isAdmin}
                     onDelete={onItemDeleted}
                   />
@@ -225,6 +232,9 @@ function DailyReportFeedItem({
               type={file.type}
               filename={file.name || file.originalName}
               category={file.category}
+              contentType={file.contentType}
+              sizeBytes={file.sizeBytes}
+              renderMode={file.renderMode}
               canDelete={isAdmin}
               onDelete={onItemDeleted}
             />
