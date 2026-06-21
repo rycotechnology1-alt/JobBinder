@@ -5,10 +5,12 @@
 // "Edit markup" hands off to the full editor.
 
 import { useMemo, useState, type CSSProperties } from "react";
-import { ChevronLeft, ChevronRight, Maximize2, Pencil, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon, Maximize2, Pencil, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { FileViewerOverlay } from "@/components/FileViewerOverlay";
+import { getOriginalContentUrl } from "@/lib/file-preview";
 import { useMarkupStore } from "@/lib/markup/useMarkupStore";
-import type { Mark } from "@/lib/markup/types";
+import type { Mark, MarkAttachment } from "@/lib/markup/types";
 import type { Size } from "@/lib/markup/viewport";
 import { MarkupCanvasLayer } from "./MarkupCanvasLayer";
 import { PageSurface } from "./PageSurface";
@@ -36,6 +38,14 @@ function formatTaskStatus(status: string) {
     .join(" ");
 }
 
+function attachmentDisplayName(attachment: MarkAttachment) {
+  return attachment.name?.trim() || attachment.originalName;
+}
+
+function isImageAttachment(attachment: MarkAttachment) {
+  return attachment.type === "PHOTO" || attachment.contentType?.toLowerCase().startsWith("image/");
+}
+
 export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
   const store = useMarkupStore(fileId);
   const [pageNumber, setPageNumber] = useState(1);
@@ -43,6 +53,7 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
   const [baseSize, setBaseSize] = useState<Size>(EMPTY_SIZE);
   const [status, setStatus] = useState("");
   const [activePin, setActivePin] = useState<Mark | null>(null);
+  const [activeAttachmentId, setActiveAttachmentId] = useState<string | null>(null);
   const { viewportRef, contentRef, contentStyle, viewScale, rasterScale, zoomIn, zoomOut, fitToScreen, pointerHandlers } =
     useMarkupViewport({
       baseSize,
@@ -59,6 +70,8 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
       .forEach((m, i) => map.set(m.id, i + 1));
     return map;
   }, [store.marks]);
+
+  const activeAttachment = activePin?.attachments?.find((attachment) => attachment.id === activeAttachmentId) ?? null;
 
   return (
     <div className="flex h-full select-none flex-col" style={NO_SELECT_STYLE}>
@@ -121,7 +134,10 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
                 onSelect={() => {}}
                 onCreate={() => {}}
                 onMove={() => {}}
-                onPinTap={setActivePin}
+                onPinTap={(mark) => {
+                  setActivePin(mark);
+                  setActiveAttachmentId(null);
+                }}
               />
             )}
           </PageSurface>
@@ -142,20 +158,67 @@ export function MarkedUpView({ fileId, src, mode, onEdit }: Props) {
               </div>
             )}
             {activePin.attachments && activePin.attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {activePin.attachments.map((attachment) => (
-                  <span key={attachment.id} className="rounded-full border border-zinc-800 px-2 py-1 text-xs text-zinc-300">
-                    {attachment.name || attachment.originalName}
-                  </span>
+                  <PinAttachmentPreview
+                    key={attachment.id}
+                    attachment={attachment}
+                    onOpen={() => setActiveAttachmentId(attachment.id)}
+                  />
                 ))}
               </div>
             )}
           </div>
-          <button type="button" onClick={() => setActivePin(null)} className="text-xs text-zinc-400 hover:text-zinc-100">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveAttachmentId(null);
+              setActivePin(null);
+            }}
+            className="text-xs text-zinc-400 hover:text-zinc-100"
+          >
             Close
           </button>
         </div>
       )}
+
+      <FileViewerOverlay
+        fileId={activeAttachment?.id ?? null}
+        isOpen={Boolean(activeAttachment)}
+        initialFilename={activeAttachment ? attachmentDisplayName(activeAttachment) : undefined}
+        onClose={() => setActiveAttachmentId(null)}
+      />
     </div>
+  );
+}
+
+function PinAttachmentPreview({ attachment, onOpen }: { attachment: MarkAttachment; onOpen: () => void }) {
+  const filename = attachmentDisplayName(attachment);
+  const isImage = isImageAttachment(attachment);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`View ${filename}`}
+      title={`View ${filename}`}
+      className="group w-28 shrink-0 text-left"
+    >
+      <span className="relative block aspect-[4/3] overflow-hidden rounded-md border border-zinc-800 bg-zinc-900">
+        <ImageIcon size={20} className="absolute left-1/2 top-1/2 text-zinc-600 -translate-x-1/2 -translate-y-1/2" />
+        {isImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={getOriginalContentUrl(attachment.id)}
+            alt={filename}
+            className="absolute inset-0 h-full w-full object-cover transition-transform group-hover:scale-105"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+        )}
+      </span>
+      <span className="mt-1 block truncate text-xs text-zinc-300 group-hover:text-zinc-100">{filename}</span>
+    </button>
   );
 }

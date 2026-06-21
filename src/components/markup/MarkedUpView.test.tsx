@@ -79,6 +79,29 @@ vi.mock("./MarkupCanvasLayer", () => ({
   ),
 }));
 
+vi.mock("@/components/FileViewerOverlay", () => ({
+  FileViewerOverlay: ({
+    fileId,
+    isOpen,
+    initialFilename,
+    onClose,
+  }: {
+    fileId: string | null;
+    isOpen: boolean;
+    initialFilename?: string;
+    onClose: () => void;
+  }) =>
+    isOpen ? (
+      <div role="dialog" aria-label="Attachment preview">
+        <span>{fileId}</span>
+        <span>{initialFilename}</span>
+        <button type="button" onClick={onClose}>
+          Close attachment preview
+        </button>
+      </div>
+    ) : null,
+}));
+
 afterEach(() => {
   cleanup();
 });
@@ -94,5 +117,27 @@ describe("MarkedUpView", () => {
     expect(screen.getByText("sill.jpg")).toBeTruthy();
     expect(screen.getByText("Fix sill caulk")).toBeTruthy();
     expect(screen.getByText("Open")).toBeTruthy();
+  });
+
+  it("opens selected pin image attachments without leaving markup review", async () => {
+    const user = userEvent.setup();
+    render(<MarkedUpView fileId="file-1" src="/file.pdf" mode="pdf" onEdit={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Open pin" }));
+
+    const attachmentButton = screen.getByRole("button", { name: "View sill.jpg" });
+    const thumbnail = screen.getByAltText("sill.jpg");
+    expect(thumbnail.getAttribute("src")).toBe("/api/files/file-pin-1/content");
+
+    await user.click(attachmentButton);
+
+    expect(screen.getByRole("dialog", { name: "Attachment preview" })).toBeTruthy();
+    expect(screen.getByText("file-pin-1")).toBeTruthy();
+    expect(screen.getAllByText("sill.jpg").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Close attachment preview" }));
+
+    expect(screen.queryByRole("dialog", { name: "Attachment preview" })).toBeNull();
+    expect(screen.getByText("Missing caulk at sill")).toBeTruthy();
   });
 });
