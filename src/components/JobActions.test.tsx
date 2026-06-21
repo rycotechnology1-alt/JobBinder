@@ -47,6 +47,14 @@ vi.mock("@/lib/uploads/client-upload", async (importOriginal) => {
   };
 });
 
+async function openNewMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "New" }));
+}
+
+async function openMoreMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+}
+
 describe("JobActions", () => {
   beforeEach(() => {
     refresh.mockClear();
@@ -77,6 +85,7 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
+    await openNewMenu(user);
     await user.click(screen.getByRole("button", { name: /Add Note/i }));
     await user.type(screen.getByLabelText("Note Details *"), "Customer asked for a closeout checklist.");
     await user.click(screen.getByLabelText("Create task from this note"));
@@ -110,6 +119,7 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
+    await openNewMenu(user);
     await user.click(screen.getByRole("button", { name: /Quick Task/i }));
     await user.type(screen.getByLabelText("Title *"), "Install cabinet pulls");
     await user.type(screen.getByLabelText("Description"), "Use brushed nickel hardware.");
@@ -138,6 +148,7 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
+    await openNewMenu(user);
     await user.click(screen.getByRole("button", { name: /Quick Task/i }));
     await user.type(screen.getByLabelText("Title *"), "Touch up stair trim");
     await user.click(screen.getByLabelText("Punch List"));
@@ -169,6 +180,7 @@ describe("JobActions", () => {
     } as Response);
     render(<JobActions jobId="job-1" />);
 
+    await openNewMenu(user);
     await user.click(screen.getByRole("button", { name: /Quick Task/i }));
     await user.type(screen.getByLabelText("Title *"), "Fix sill caulk");
 
@@ -211,6 +223,7 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
+    await openNewMenu(user);
     await user.click(screen.getByRole("button", { name: /Quick Task/i }));
     await user.click(screen.getByRole("button", { name: "Create" }));
 
@@ -234,7 +247,8 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
-    await user.click(screen.getAllByRole("button", { name: /Daily Report/i })[0]);
+    await openNewMenu(user);
+    await user.click(screen.getByRole("button", { name: /Daily Report/i }));
     expect(screen.queryByLabelText("Category")).toBeNull();
 
     await user.clear(screen.getByLabelText("Report Date *"));
@@ -284,6 +298,7 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
+    await openNewMenu(user);
     await user.click(screen.getByRole("button", { name: /Quick Task/i }));
     await user.type(screen.getByLabelText("Title *"), "Call inspector");
     await user.click(screen.getByRole("button", { name: "Create" }));
@@ -305,6 +320,7 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     render(<JobActions jobId="job-1" />);
 
+    await openNewMenu(user);
     await user.click(screen.getByRole("button", { name: /Quick Task/i }));
     await user.type(screen.getByLabelText("Title *"), "Fix sill caulk");
     const fileInput = screen.getByLabelText("Attach files or photos") as HTMLInputElement;
@@ -325,11 +341,11 @@ describe("JobActions", () => {
     const user = userEvent.setup();
     const { rerender } = render(<JobActions jobId="job-1" isAdmin={false} />);
 
+    await openMoreMenu(user);
     expect(screen.queryByRole("button", { name: "Delete job" })).toBeNull();
 
     rerender(<JobActions jobId="job-1" isAdmin />);
-    expect(screen.queryByText("Delete Job")).toBeNull();
-    await user.click(screen.getAllByRole("button", { name: "Delete job" })[0]);
+    await user.click(screen.getByRole("button", { name: "Delete job" }));
     expect(screen.getByRole("dialog", { name: "Delete job" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
@@ -338,5 +354,16 @@ describe("JobActions", () => {
     });
     expect(push).toHaveBeenCalledWith("/");
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("opens the Manage Job dialog from the overflow menu", async () => {
+    const user = userEvent.setup();
+    const onManageJob = vi.fn();
+    render(<JobActions jobId="job-1" onManageJob={onManageJob} />);
+
+    await openMoreMenu(user);
+    await user.click(screen.getByRole("button", { name: "Manage Job" }));
+
+    expect(onManageJob).toHaveBeenCalledOnce();
   });
 });

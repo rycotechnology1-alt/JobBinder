@@ -28,13 +28,25 @@ type ManageableJob = {
 type Props = {
   job: ManageableJob;
   isAdmin: boolean;
+  /** Controlled open state. When provided, the dialog becomes controlled. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Render the built-in "Manage Job" trigger button. Defaults to true. */
+  showTrigger?: boolean;
 };
 
-export function ManageJobDialog({ job, isAdmin }: Props) {
-  const [isOpen, setIsOpen] = useState(false);
+export function ManageJobDialog({ job, isAdmin, open, onOpenChange, showTrigger = true }: Props) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : internalOpen;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  function setOpen(next: boolean) {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,7 +86,7 @@ export function ManageJobDialog({ job, isAdmin }: Props) {
         throw new Error(body.error || "Could not update job.");
       }
 
-      setIsOpen(false);
+      setOpen(false);
       router.refresh();
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Could not update job.");
@@ -85,12 +97,14 @@ export function ManageJobDialog({ job, isAdmin }: Props) {
 
   return (
     <>
-      <Button type="button" variant="secondary" className="gap-2" onClick={() => setIsOpen(true)}>
-        <Settings2 size={16} />
-        Manage Job
-      </Button>
+      {showTrigger && (
+        <Button type="button" variant="secondary" className="gap-2" onClick={() => setOpen(true)}>
+          <Settings2 size={16} />
+          Manage Job
+        </Button>
+      )}
 
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Manage Job" className="max-w-2xl">
+      <Modal isOpen={isOpen} onClose={() => setOpen(false)} title="Manage Job" className="max-w-2xl">
         <form onSubmit={handleSubmit} className="space-y-6">
           <section className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-widest text-zinc-500">Basic Details</h3>
@@ -182,7 +196,7 @@ export function ManageJobDialog({ job, isAdmin }: Props) {
           {error && <p className="text-sm text-red-400">{error}</p>}
 
           <div className="pt-2 flex justify-end gap-3">
-            <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
             <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Saving..." : "Save Job"}</Button>
           </div>
         </form>

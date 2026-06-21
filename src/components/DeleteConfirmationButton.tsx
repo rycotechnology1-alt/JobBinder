@@ -14,6 +14,11 @@ type Props = {
   onDeleted: () => void;
   triggerText?: string;
   className?: string;
+  /** Controlled open state. When provided, the dialog becomes controlled. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Render the built-in trigger button. Defaults to true. */
+  showTrigger?: boolean;
 };
 
 export function DeleteConfirmationButton({
@@ -24,10 +29,20 @@ export function DeleteConfirmationButton({
   onDeleted,
   triggerText,
   className,
+  open,
+  onOpenChange,
+  showTrigger = true,
 }: Props) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : internalOpen;
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function setOpen(next: boolean) {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  }
 
   async function handleDelete() {
     setIsDeleting(true);
@@ -41,7 +56,7 @@ export function DeleteConfirmationButton({
         throw new Error(payload.error || "Could not delete item.");
       }
 
-      setIsOpen(false);
+      setOpen(false);
       onDeleted();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Could not delete item.");
@@ -52,30 +67,32 @@ export function DeleteConfirmationButton({
 
   return (
     <>
-      <Button
-        type="button"
-        variant="danger"
-        size="sm"
-        aria-label={label}
-        title={label}
-        onClick={() => setIsOpen(true)}
-        className={cn(
-          triggerText
-            ? "gap-2"
-            : "h-8 w-8 rounded-md bg-red-500/5 px-0 py-0 text-red-400 hover:bg-red-500/10",
-          className,
-        )}
-      >
-        <Trash2 size={15} />
-        {triggerText}
-      </Button>
+      {showTrigger && (
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          aria-label={label}
+          title={label}
+          onClick={() => setOpen(true)}
+          className={cn(
+            triggerText
+              ? "gap-2"
+              : "h-8 w-8 rounded-md bg-red-500/5 px-0 py-0 text-red-400 hover:bg-red-500/10",
+            className,
+          )}
+        >
+          <Trash2 size={15} />
+          {triggerText}
+        </Button>
+      )}
 
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title={title}>
+      <Modal isOpen={isOpen} onClose={() => setOpen(false)} title={title}>
         <div className="space-y-4">
           <p className="text-sm text-zinc-400">{message}</p>
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setIsOpen(false)} disabled={isDeleting}>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={isDeleting}>
               Cancel
             </Button>
             <Button type="button" variant="danger" onClick={handleDelete} disabled={isDeleting}>

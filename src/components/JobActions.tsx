@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
-import { Camera, ClipboardList, FileText, ListTodo, Archive } from "lucide-react";
+import { Archive, Camera, ClipboardList, FileText, ListTodo, MoreHorizontal, Plus, Settings2, Trash2 } from "lucide-react";
 import { AssetCategorySelect } from "@/components/AssetCategorySelect";
 import { AssetUploadModal } from "@/components/AssetUploadModal";
 import { ExportModal } from "@/components/ExportModal";
@@ -18,20 +18,44 @@ import {
   uploadFileRecord,
 } from "@/lib/uploads/client-upload";
 import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
+import { cn } from "@/lib/utils";
 
 interface Props {
   jobId: string;
   isAdmin?: boolean;
+  /** Opens the Manage Job dialog (owned by the header). When omitted, the menu item is hidden. */
+  onManageJob?: () => void;
 }
 
-export function JobActions({ jobId, isAdmin = false }: Props) {
+export function JobActions({ jobId, isAdmin = false, onManageJob }: Props) {
   const [activeModal, setActiveModal] = useState<"NONE" | "NOTE" | "DAILY_REPORT" | "UPLOAD" | "TASK" | "EXPORT">("NONE");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createTaskFromNote, setCreateTaskFromNote] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [dailyReportFiles, setDailyReportFiles] = useState<File[]>([]);
   const [taskFiles, setTaskFiles] = useState<File[]>([]);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [jobDeleteOpen, setJobDeleteOpen] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!newMenuRef.current?.contains(event.target as Node)) setNewMenuOpen(false);
+      if (!moreMenuRef.current?.contains(event.target as Node)) setMoreMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  function openModalFromMenu(modal: "NOTE" | "DAILY_REPORT" | "UPLOAD" | "TASK" | "EXPORT") {
+    setNewMenuOpen(false);
+    setMoreMenuOpen(false);
+    setActiveModal(modal);
+  }
 
   function closeModal() {
     setActiveModal("NONE");
@@ -375,81 +399,93 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
 
   return (
     <>
-      {/* Desktop Buttons */}
-      <div className="hidden md:flex flex-wrap items-center justify-end gap-2 mb-4">
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label="Export Job Package"
-          className="gap-2 whitespace-nowrap border-zinc-800 text-zinc-300 hover:bg-zinc-800"
-          onClick={() => setActiveModal("EXPORT")}
-        >
-          <Archive size={15}/> Export
-        </Button>
-        <Button variant="secondary" size="sm" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("UPLOAD")}>
-          <Camera size={15}/> Upload
-        </Button>
-        <Button variant="secondary" size="sm" aria-label="Quick Task" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("TASK")}>
-          <ListTodo size={15}/> Task
-        </Button>
-        <Button variant="secondary" size="sm" aria-label="Daily Report" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("DAILY_REPORT")}>
-          <ClipboardList size={15}/> Daily Report
-        </Button>
-        <Button size="sm" aria-label="Add Note" className="gap-2 whitespace-nowrap" onClick={() => setActiveModal("NOTE")}>
-          <FileText size={15}/> Note
-        </Button>
-        {isAdmin && (
-          <DeleteConfirmationButton
-            endpoint={`/api/jobs/${jobId}`}
-            label="Delete job"
-            title="Delete job"
-            message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
-            onDeleted={() => {
-              router.push("/");
-              router.refresh();
+      <div className="flex items-center gap-2">
+        {/* + New menu */}
+        <div ref={newMenuRef} className="relative">
+          <Button
+            size="sm"
+            aria-label="New"
+            aria-haspopup="menu"
+            aria-expanded={newMenuOpen}
+            className="gap-1.5 whitespace-nowrap"
+            onClick={() => {
+              setMoreMenuOpen(false);
+              setNewMenuOpen((current) => !current);
             }}
-          />
-        )}
+          >
+            <Plus size={16} /> New
+          </Button>
+          {newMenuOpen && (
+            <div className="absolute right-0 top-11 z-50 w-52 rounded-xl border border-zinc-800 bg-zinc-950/95 p-2 shadow-2xl shadow-black/40 backdrop-blur">
+              <MenuItem icon={<Camera size={16} className="text-brand-light" />} label="Upload" ariaLabel="Upload" onClick={() => openModalFromMenu("UPLOAD")} />
+              <MenuItem icon={<ListTodo size={16} className="text-amber-400" />} label="Task" ariaLabel="Quick Task" onClick={() => openModalFromMenu("TASK")} />
+              <MenuItem icon={<ClipboardList size={16} className="text-emerald-400" />} label="Daily Report" ariaLabel="Daily Report" onClick={() => openModalFromMenu("DAILY_REPORT")} />
+              <MenuItem icon={<FileText size={16} className="text-purple-400" />} label="Note" ariaLabel="Add Note" onClick={() => openModalFromMenu("NOTE")} />
+            </div>
+          )}
+        </div>
+
+        {/* Overflow menu */}
+        <div ref={moreMenuRef} className="relative">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="More actions"
+            aria-haspopup="menu"
+            aria-expanded={moreMenuOpen}
+            className="px-2 border-zinc-800 text-zinc-300 hover:bg-zinc-800"
+            onClick={() => {
+              setNewMenuOpen(false);
+              setMoreMenuOpen((current) => !current);
+            }}
+          >
+            <MoreHorizontal size={18} />
+          </Button>
+          {moreMenuOpen && (
+            <div className="absolute right-0 top-11 z-50 w-56 rounded-xl border border-zinc-800 bg-zinc-950/95 p-2 shadow-2xl shadow-black/40 backdrop-blur">
+              {onManageJob && (
+                <MenuItem
+                  icon={<Settings2 size={16} className="text-zinc-400" />}
+                  label="Manage Job"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    onManageJob();
+                  }}
+                />
+              )}
+              <MenuItem icon={<Archive size={16} className="text-brand-light" />} label="Export Job Package" ariaLabel="Export Job Package" onClick={() => openModalFromMenu("EXPORT")} />
+              {isAdmin && (
+                <MenuItem
+                  icon={<Trash2 size={16} className="text-red-400" />}
+                  label="Delete Job"
+                  ariaLabel="Delete job"
+                  destructive
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    setJobDeleteOpen(true);
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Mobile Buttons */}
-      <div className="md:hidden mb-6">
-        <div className="grid grid-cols-4 gap-3">
-          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("UPLOAD")}>
-            <Camera size={20} className="text-brand-light" />
-            Upload
-          </Button>
-          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("TASK")}>
-            <ListTodo size={20} className="text-amber-400" />
-            Task
-          </Button>
-          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("DAILY_REPORT")}>
-            <ClipboardList size={20} className="text-emerald-400" />
-            Daily Report
-          </Button>
-          <Button variant="secondary" className="flex-col h-auto py-3 gap-2 text-xs" onClick={() => setActiveModal("NOTE")}>
-            <FileText size={20} className="text-purple-400" />
-            Note
-          </Button>
-        </div>
-        <Button variant="outline" className="w-full mt-3 gap-2 border-zinc-800 text-zinc-300 hover:bg-zinc-800 py-3 h-auto text-xs" onClick={() => setActiveModal("EXPORT")}>
-          <Archive size={16} className="text-brand-light" /> Export Job Package
-        </Button>
-        {isAdmin && (
-          <div className="mt-3 flex justify-end">
-            <DeleteConfirmationButton
-              endpoint={`/api/jobs/${jobId}`}
-              label="Delete job"
-              title="Delete job"
-              message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
-              onDeleted={() => {
-                router.push("/");
-                router.refresh();
-              }}
-            />
-          </div>
-        )}
-      </div>
+      {isAdmin && (
+        <DeleteConfirmationButton
+          endpoint={`/api/jobs/${jobId}`}
+          label="Delete job"
+          title="Delete job"
+          message="Delete this job and all of its notes, files, tasks, exports, and stored uploads? This cannot be undone."
+          showTrigger={false}
+          open={jobDeleteOpen}
+          onOpenChange={setJobDeleteOpen}
+          onDeleted={() => {
+            router.push("/");
+            router.refresh();
+          }}
+        />
+      )}
 
       <Modal isOpen={activeModal === "NOTE"} onClose={closeModal} title="Add Note">
         <form onSubmit={handleAddNote} className="space-y-4">
@@ -712,5 +748,36 @@ export function JobActions({ jobId, isAdmin = false }: Props) {
         jobTitle="this Job folder"
       />
     </>
+  );
+}
+
+function MenuItem({
+  icon,
+  label,
+  ariaLabel,
+  destructive = false,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  ariaLabel?: string;
+  destructive?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel ?? label}
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+        destructive
+          ? "text-red-400 hover:bg-red-500/10"
+          : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

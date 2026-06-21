@@ -4,15 +4,17 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Circle, Clock3, PlayCircle, RotateCcw } from "lucide-react";
 import { ASSET_CATEGORIES } from "@/lib/asset-categories";
-import { countIncompleteTasks } from "@/lib/job-folder";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { FilePreview } from "@/components/FilePreview";
 import { JobFeed } from "@/components/JobFeed";
+import { JobPhotoGrid } from "@/components/job-workspace/JobPhotoGrid";
 import { DeleteConfirmationButton } from "@/components/DeleteConfirmationButton";
 
-type NoteItem = {
+export type JobSection = "FEED" | "FILES" | "PHOTOS" | "DAILY_REPORTS" | "TASKS";
+
+export type NoteItem = {
   id: string;
   type: "GENERAL" | "PROGRESS" | "DAILY_REPORT";
   content: string;
@@ -24,7 +26,7 @@ type NoteItem = {
   authorName: string;
 };
 
-type FileItem = {
+export type FileItem = {
   id: string;
   type: "PHOTO" | "DOCUMENT";
   originalName: string;
@@ -36,7 +38,7 @@ type FileItem = {
   createdAt: string;
 };
 
-type TaskItem = {
+export type TaskItem = {
   id: string;
   title: string;
   description: string | null;
@@ -48,10 +50,10 @@ type TaskItem = {
   files?: FileItem[];
 };
 
-type Tab = "FEED" | "FILES" | "DAILY_REPORTS" | "TASKS";
 type TaskStatus = TaskItem["status"];
 
 type Props = {
+  activeSection: JobSection;
   notes: NoteItem[];
   files: FileItem[];
   tasks: TaskItem[];
@@ -73,7 +75,7 @@ function sortTasks(tasks: TaskItem[]) {
   });
 }
 
-function isDailyReport(note: NoteItem) {
+export function isDailyReport(note: NoteItem) {
   return note.type === "DAILY_REPORT" || note.type === "PROGRESS";
 }
 
@@ -91,8 +93,7 @@ function formatDisplayDate(value: string) {
   return new Date(value).toLocaleDateString();
 }
 
-export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>("FEED");
+export function JobSectionContent({ activeSection, notes, files, tasks: initialTasks, isAdmin }: Props) {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [taskStatusOverrides, setTaskStatusOverrides] = useState<Record<string, TaskStatus>>({});
   const [taskError, setTaskError] = useState<string | null>(null);
@@ -105,23 +106,25 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Pr
     }));
   }, [taskStatusOverrides, initialTasks]);
 
-  const incompleteTaskCount = countIncompleteTasks(tasks);
   const dailyReports = useMemo(() => {
     return notes
       .filter(isDailyReport)
       .sort((a, b) => new Date(getReportDisplayDate(b)).getTime() - new Date(getReportDisplayDate(a)).getTime());
   }, [notes]);
 
-  const fileCounts = useMemo(() => {
+  const documents = useMemo(() => files.filter((file) => file.type === "DOCUMENT"), [files]);
+  const photos = useMemo(() => files.filter((file) => file.type === "PHOTO"), [files]);
+
+  const documentCounts = useMemo(() => {
     return ASSET_CATEGORIES.reduce<Record<string, number>>((counts, category) => {
-      counts[category] = files.filter((file) => file.category === category).length;
+      counts[category] = documents.filter((file) => file.category === category).length;
       return counts;
     }, {});
-  }, [files]);
+  }, [documents]);
 
-  const visibleFiles = selectedCategory === "All"
-    ? files
-    : files.filter((file) => file.category === selectedCategory);
+  const visibleDocuments = selectedCategory === "All"
+    ? documents
+    : documents.filter((file) => file.category === selectedCategory);
 
   const taskItems = useMemo(() => sortTasks(tasks.filter((task) => task.type === "TASK")), [tasks]);
   const punchListItems = useMemo(() => sortTasks(tasks.filter((task) => task.type === "PUNCH_LIST")), [tasks]);
@@ -165,132 +168,112 @@ export function JobFolderTabs({ notes, files, tasks: initialTasks, isAdmin }: Pr
     router.refresh();
   }
 
-  const tabClass = (tab: Tab) => cn(
-    "px-6 py-4 text-sm font-medium border-b-2 transition-colors",
-    activeTab === tab
-      ? "text-brand border-brand"
-      : "text-zinc-400 border-transparent hover:text-zinc-300",
-  );
-
   return (
-    <>
-      <div className="flex border-b border-zinc-800 overflow-x-auto">
-        <button type="button" className={tabClass("FEED")} onClick={() => setActiveTab("FEED")}>
-          Feed
-        </button>
-        <button type="button" className={tabClass("FILES")} onClick={() => setActiveTab("FILES")}>
-          Files ({files.length})
-        </button>
-        <button type="button" className={tabClass("DAILY_REPORTS")} onClick={() => setActiveTab("DAILY_REPORTS")}>
-          Daily Reports ({dailyReports.length})
-        </button>
-        <button type="button" className={tabClass("TASKS")} onClick={() => setActiveTab("TASKS")}>
-          Tasks ({incompleteTaskCount})
-        </button>
-      </div>
+    <div className="p-4 md:p-6">
+      {activeSection === "FEED" && (
+        <JobFeed notes={notes} files={files} isAdmin={isAdmin} onItemDeleted={refreshAfterDelete} />
+      )}
 
-      <div className="p-6">
-        {activeTab === "FEED" && (
-          <JobFeed notes={notes} files={files} isAdmin={isAdmin} onItemDeleted={refreshAfterDelete} />
-        )}
-
-        {activeTab === "FILES" && (
-          <div className="space-y-6">
-            <div className="flex gap-2 overflow-x-auto pb-2">
+      {activeSection === "FILES" && (
+        <div className="space-y-6">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            <button
+              type="button"
+              onClick={() => setSelectedCategory("All")}
+              className={cn(
+                "h-9 px-3 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors",
+                selectedCategory === "All"
+                  ? "bg-brand text-white border-brand"
+                  : "bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:border-zinc-700",
+              )}
+            >
+              All ({documents.length})
+            </button>
+            {ASSET_CATEGORIES.map((category) => (
               <button
+                key={category}
                 type="button"
-                onClick={() => setSelectedCategory("All")}
+                onClick={() => setSelectedCategory(category)}
                 className={cn(
                   "h-9 px-3 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors",
-                  selectedCategory === "All"
+                  selectedCategory === category
                     ? "bg-brand text-white border-brand"
                     : "bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:border-zinc-700",
                 )}
               >
-                All ({files.length})
+                {category} ({documentCounts[category] ?? 0})
               </button>
-              {ASSET_CATEGORIES.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setSelectedCategory(category)}
-                  className={cn(
-                    "h-9 px-3 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors",
-                    selectedCategory === category
-                      ? "bg-brand text-white border-brand"
-                      : "bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:border-zinc-700",
-                  )}
-                >
-                  {category} ({fileCounts[category] ?? 0})
-                </button>
-              ))}
-            </div>
-
-            {visibleFiles.length === 0 ? (
-              <p className="text-zinc-500 text-center py-10">No files in this category yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {visibleFiles.map((file) => (
-                  <FilePreview
-                    key={file.id}
-                    fileId={file.id}
-                    type={file.type}
-                    filename={file.name || file.originalName}
-                    category={file.category}
-                    canDelete={isAdmin}
-                    onDelete={refreshAfterDelete}
-                  />
-                ))}
-              </div>
-            )}
+            ))}
           </div>
-        )}
 
-        {activeTab === "DAILY_REPORTS" && (
-          dailyReports.length === 0 ? (
-            <p className="text-zinc-500 text-center py-10">No daily reports yet.</p>
+          {visibleDocuments.length === 0 ? (
+            <p className="text-zinc-500 text-center py-10">No files in this category yet.</p>
           ) : (
             <div className="space-y-4">
-              {dailyReports.map((report) => (
-                <DailyReportCard
-                  key={report.id}
-                  report={report}
-                  files={files.filter((file) => file.noteId === report.id)}
-                  isAdmin={isAdmin}
-                  onDeleted={refreshAfterDelete}
+              {visibleDocuments.map((file) => (
+                <FilePreview
+                  key={file.id}
+                  fileId={file.id}
+                  type={file.type}
+                  filename={file.name || file.originalName}
+                  category={file.category}
+                  canDelete={isAdmin}
+                  onDelete={refreshAfterDelete}
                 />
               ))}
             </div>
-          )
-        )}
+          )}
+        </div>
+      )}
 
-        {activeTab === "TASKS" && (
-          <div className="space-y-8">
-            {taskError && <p className="text-sm text-red-400">{taskError}</p>}
+      {activeSection === "PHOTOS" && (
+        <JobPhotoGrid photos={photos} isAdmin={isAdmin} onDeleted={refreshAfterDelete} />
+      )}
 
-            <TaskSection
-              title="Tasks"
-              testId="tasks-section"
-              emptyMessage="No tasks yet."
-              tasks={taskItems}
-              onStatusChange={updateTaskStatus}
-              isAdmin={isAdmin}
-              onDeleted={refreshAfterDelete}
-            />
-
-            <TaskSection
-              title="Punch List"
-              testId="punch-list-section"
-              emptyMessage="No punch list items yet."
-              tasks={punchListItems}
-              onStatusChange={updateTaskStatus}
-              isAdmin={isAdmin}
-              onDeleted={refreshAfterDelete}
-            />
+      {activeSection === "DAILY_REPORTS" && (
+        dailyReports.length === 0 ? (
+          <p className="text-zinc-500 text-center py-10">No daily reports yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {dailyReports.map((report) => (
+              <DailyReportCard
+                key={report.id}
+                report={report}
+                files={files.filter((file) => file.noteId === report.id)}
+                isAdmin={isAdmin}
+                onDeleted={refreshAfterDelete}
+              />
+            ))}
           </div>
-        )}
-      </div>
-    </>
+        )
+      )}
+
+      {activeSection === "TASKS" && (
+        <div className="space-y-8">
+          {taskError && <p className="text-sm text-red-400">{taskError}</p>}
+
+          <TaskSection
+            title="Tasks"
+            testId="tasks-section"
+            emptyMessage="No tasks yet."
+            tasks={taskItems}
+            onStatusChange={updateTaskStatus}
+            isAdmin={isAdmin}
+            onDeleted={refreshAfterDelete}
+          />
+
+          <TaskSection
+            title="Punch List"
+            testId="punch-list-section"
+            emptyMessage="No punch list items yet."
+            tasks={punchListItems}
+            onStatusChange={updateTaskStatus}
+            isAdmin={isAdmin}
+            onDeleted={refreshAfterDelete}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

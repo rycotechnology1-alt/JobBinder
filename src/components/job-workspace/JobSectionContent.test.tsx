@@ -3,7 +3,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { JobFolderTabs } from "./JobFolderTabs";
+import { JobSectionContent } from "./JobSectionContent";
 
 const refresh = vi.fn();
 
@@ -31,6 +31,11 @@ vi.mock("@/components/FilePreview", () => ({
       {canDelete && <button type="button" onClick={onDelete}>Delete {filename}</button>}
     </div>
   ),
+}));
+
+// FileViewerOverlay pulls in heavy PDF/image viewers; the Photos grid only needs its trigger.
+vi.mock("@/components/FileViewerOverlay", () => ({
+  FileViewerOverlay: () => null,
 }));
 
 const files = [
@@ -113,7 +118,7 @@ const tasks = [
   },
 ];
 
-describe("JobFolderTabs", () => {
+describe("JobSectionContent", () => {
   beforeEach(() => {
     refresh.mockClear();
     vi.stubGlobal(
@@ -129,28 +134,33 @@ describe("JobFolderTabs", () => {
     cleanup();
   });
 
-  it("switches to files and filters by category", async () => {
+  it("shows only documents in the Files section and filters by category", async () => {
     const user = userEvent.setup();
-    render(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin={false} />);
+    render(<JobSectionContent activeSection="FILES" notes={[]} files={files} tasks={tasks} isAdmin={false} />);
 
-    expect(screen.getByRole("button", { name: "Files (2)" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Files (2)" }));
-
+    expect(screen.getByRole("button", { name: "All (1)" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Permits (1)" })).toBeTruthy();
     expect(screen.getByText("Permit Packet")).toBeTruthy();
-    expect(screen.getByText("before.jpg")).toBeTruthy();
+    // The photo never appears in Files.
+    expect(screen.queryByText("before.jpg")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Permits (1)" }));
-
     expect(screen.getByText("Permit Packet")).toBeTruthy();
-    expect(screen.queryByText("before.jpg")).toBeNull();
+  });
+
+  it("shows only photos in the Photos section", () => {
+    render(<JobSectionContent activeSection="PHOTOS" notes={[]} files={files} tasks={tasks} isAdmin={false} />);
+
+    expect(screen.getByRole("button", { name: "All (1)" })).toBeTruthy();
+    expect(screen.getByAltText("before.jpg")).toBeTruthy();
+    // The document never appears in Photos.
+    expect(screen.queryByText("Permit Packet")).toBeNull();
   });
 
   it("separates tasks from punch list items and progresses statuses optimistically", async () => {
     const user = userEvent.setup();
-    render(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin={false} />);
+    render(<JobSectionContent activeSection="TASKS" notes={[]} files={files} tasks={tasks} isAdmin={false} />);
 
-    await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
     expect(screen.getByRole("heading", { name: "Tasks" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Punch List" })).toBeTruthy();
 
@@ -163,7 +173,7 @@ describe("JobFolderTabs", () => {
     await user.click(screen.getByRole("button", { name: "Start Install trim" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Tasks (2)" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Mark Install trim complete" })).toBeTruthy();
     });
     expect(fetch).toHaveBeenCalledWith(
       "/api/tasks",
@@ -180,7 +190,7 @@ describe("JobFolderTabs", () => {
 
     await user.click(screen.getByRole("button", { name: "Mark Install trim complete" }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Tasks (1)" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reopen Install trim" })).toBeTruthy();
     });
 
     vi.mocked(fetch).mockResolvedValueOnce({
@@ -190,28 +200,26 @@ describe("JobFolderTabs", () => {
 
     await user.click(screen.getByRole("button", { name: "Reopen Submit permit closeout" }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Tasks (2)" })).toBeTruthy();
+      expect(fetch).toHaveBeenLastCalledWith(
+        "/api/tasks",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ id: "task-3", status: "OPEN" }),
+        }),
+      );
     });
-    expect(fetch).toHaveBeenLastCalledWith(
-      "/api/tasks",
-      expect.objectContaining({
-        method: "PATCH",
-        body: JSON.stringify({ id: "task-3", status: "OPEN" }),
-      }),
-    );
     expect(refresh).toHaveBeenCalledTimes(3);
   });
 
   it("shows delete controls only for admins and confirms task deletion", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin={false} />);
+    const { rerender } = render(
+      <JobSectionContent activeSection="TASKS" notes={[]} files={files} tasks={tasks} isAdmin={false} />,
+    );
 
-    await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
     expect(screen.queryByRole("button", { name: "Delete Install trim" })).toBeNull();
 
-    rerender(<JobFolderTabs notes={[]} files={files} tasks={tasks} isAdmin />);
-    await user.click(screen.getByRole("button", { name: "Tasks (2)" }));
-    expect(screen.queryByText("Delete Install trim")).toBeNull();
+    rerender(<JobSectionContent activeSection="TASKS" notes={[]} files={files} tasks={tasks} isAdmin />);
     await user.click(screen.getByRole("button", { name: "Delete Install trim" }));
     expect(screen.getByRole("dialog", { name: "Delete task" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Delete" }));
@@ -222,8 +230,7 @@ describe("JobFolderTabs", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("reflects newly refreshed task props without a full page reload", async () => {
-    const user = userEvent.setup();
+  it("reflects newly refreshed task props without a full page reload", () => {
     const newTask = {
       id: "task-3",
       title: "Call inspector",
@@ -234,23 +241,27 @@ describe("JobFolderTabs", () => {
       dueDate: null,
       createdAt: "2026-05-10T12:00:00.000Z",
     };
-    const { rerender } = render(<JobFolderTabs notes={[]} files={[]} tasks={[]} isAdmin={false} />);
+    const { rerender } = render(
+      <JobSectionContent activeSection="TASKS" notes={[]} files={[]} tasks={[]} isAdmin={false} />,
+    );
 
-    expect(screen.getByRole("button", { name: "Tasks (0)" })).toBeTruthy();
+    expect(screen.queryByText("Call inspector")).toBeNull();
 
-    rerender(<JobFolderTabs notes={[]} files={[]} tasks={[newTask]} isAdmin={false} />);
+    rerender(<JobSectionContent activeSection="TASKS" notes={[]} files={[]} tasks={[newTask]} isAdmin={false} />);
 
-    expect(screen.getByRole("button", { name: "Tasks (1)" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Tasks (1)" }));
     expect(screen.getByText("Call inspector")).toBeTruthy();
   });
 
-  it("shows daily reports with report metadata and linked attachments", async () => {
-    const user = userEvent.setup();
-    render(<JobFolderTabs notes={dailyReports} files={dailyReportFiles} tasks={[]} isAdmin={false} />);
-
-    expect(screen.getByRole("button", { name: "Daily Reports (1)" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Daily Reports (1)" }));
+  it("shows daily reports with report metadata and linked attachments", () => {
+    render(
+      <JobSectionContent
+        activeSection="DAILY_REPORTS"
+        notes={dailyReports}
+        files={dailyReportFiles}
+        tasks={[]}
+        isAdmin={false}
+      />,
+    );
 
     expect(screen.getByText("Installed conduit and cleaned work area.")).toBeTruthy();
     expect(screen.getByText("2 EMT sticks")).toBeTruthy();
@@ -258,10 +269,10 @@ describe("JobFolderTabs", () => {
     expect(screen.getByText("report-photo.jpg")).toBeTruthy();
   });
 
-  it("shows task attachments on task rows", async () => {
-    const user = userEvent.setup();
+  it("shows task attachments on task rows", () => {
     render(
-      <JobFolderTabs
+      <JobSectionContent
+        activeSection="TASKS"
         notes={[]}
         files={[]}
         tasks={[
@@ -293,52 +304,47 @@ describe("JobFolderTabs", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Tasks (1)" }));
-
     expect(screen.getByText("Fix sill caulk")).toBeTruthy();
     expect(screen.getByText("sill.jpg")).toBeTruthy();
   });
 
-  it("keeps linked attachments out of the feed but visible in Files", async () => {
-    const user = userEvent.setup();
-    render(
-      <JobFolderTabs
-        notes={[]}
-        files={[
-          {
-            id: "file-standalone",
-            type: "PHOTO",
-            originalName: "overview.jpg",
-            name: null,
-            category: "Before",
-            noteId: null,
-            taskId: null,
-            markupMarkId: null,
-            createdAt: "2026-06-15T12:00:00.000Z",
-          },
-          {
-            id: "file-pin",
-            type: "PHOTO",
-            originalName: "pin-photo.jpg",
-            name: null,
-            category: "Issue",
-            noteId: null,
-            taskId: null,
-            markupMarkId: "mark-1",
-            createdAt: "2026-06-15T12:05:00.000Z",
-          },
-        ]}
-        tasks={[]}
-        isAdmin={false}
-      />,
+  it("keeps linked photos out of the feed but aggregates them in Photos", () => {
+    const photoFiles = [
+      {
+        id: "file-standalone",
+        type: "PHOTO" as const,
+        originalName: "overview.jpg",
+        name: null,
+        category: "Before",
+        noteId: null,
+        taskId: null,
+        markupMarkId: null,
+        createdAt: "2026-06-15T12:00:00.000Z",
+      },
+      {
+        id: "file-pin",
+        type: "PHOTO" as const,
+        originalName: "pin-photo.jpg",
+        name: null,
+        category: "Issue",
+        noteId: null,
+        taskId: null,
+        markupMarkId: "mark-1",
+        createdAt: "2026-06-15T12:05:00.000Z",
+      },
+    ];
+
+    const { rerender } = render(
+      <JobSectionContent activeSection="FEED" notes={[]} files={photoFiles} tasks={[]} isAdmin={false} />,
     );
 
+    // The feed shows the standalone upload but not the pin-attached photo.
     expect(screen.getByText("overview.jpg")).toBeTruthy();
     expect(screen.queryByText("pin-photo.jpg")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Files (2)" }));
-
-    expect(screen.getByText("overview.jpg")).toBeTruthy();
-    expect(screen.getByText("pin-photo.jpg")).toBeTruthy();
+    // The Photos section aggregates every photo, including pin attachments.
+    rerender(<JobSectionContent activeSection="PHOTOS" notes={[]} files={photoFiles} tasks={[]} isAdmin={false} />);
+    expect(screen.getByAltText("overview.jpg")).toBeTruthy();
+    expect(screen.getByAltText("pin-photo.jpg")).toBeTruthy();
   });
 });

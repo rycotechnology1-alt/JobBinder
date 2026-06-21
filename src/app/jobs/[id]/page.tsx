@@ -1,14 +1,7 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { requirePageCompanyUser } from "@/lib/current-user";
-import { Card, CardContent } from "@/components/ui/Card";
-import { JobActions } from "@/components/JobActions";
-import { JobFolderTabs } from "@/components/JobFolderTabs";
-import { ManageJobDialog } from "@/components/ManageJobDialog";
-import { JobStatusCard } from "@/components/JobStatusCard";
-import { JobOverviewCard } from "@/components/JobOverviewCard";
+import { JobWorkspace } from "@/components/job-workspace/JobWorkspace";
 import { buildAccessibleJobWhere, isAccountManagerRole } from "@/lib/account-access";
 
 export default async function JobFolder({ params }: { params: Promise<{ id: string }> }) {
@@ -92,71 +85,27 @@ export default async function JobFolder({ params }: { params: Promise<{ id: stri
   }));
 
   return (
-    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard" className="p-2 rounded-full hover:bg-zinc-800 transition-colors">
-          <ArrowLeft size={20} className="text-zinc-400" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl md:text-3xl font-bold">{job.title}</h1>
-        </div>
-        <ManageJobDialog
-          isAdmin={isAdmin}
-          job={{
-            id: job.id,
-            title: job.title,
-            jobNumber: job.jobNumber,
-            poNumber: job.poNumber,
-            contractNumber: job.contractNumber,
-            customerName: job.customerName,
-            address: job.address,
-            contactName: job.contactName,
-            contactPhone: job.contactPhone,
-            contactEmail: job.contactEmail,
-            description: job.description,
-            status: job.status,
-            priority: job.priority,
-            targetCompletionDate: job.targetCompletionDate?.toISOString() ?? null,
-          }}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="space-y-6 lg:col-span-1">
-          <JobStatusCard
-            isAdmin={isAdmin}
-            job={{
-              id: job.id,
-              status: job.status,
-              priority: job.priority,
-              targetCompletionDate: job.targetCompletionDate?.toISOString() ?? null,
-            }}
-          />
-          <JobOverviewCard
-            job={{
-              customerName: job.customerName,
-              address: job.address,
-              contactName: job.contactName,
-              contactPhone: job.contactPhone,
-              contactEmail: job.contactEmail,
-              jobNumber: job.jobNumber,
-              poNumber: job.poNumber,
-              contractNumber: job.contractNumber,
-              description: job.description,
-            }}
-          />
-        </div>
-
-        <div className="lg:col-span-2 space-y-6">
-          <JobActions jobId={job.id} isAdmin={isAdmin} />
-
-          <Card>
-            <CardContent className="p-0">
-              <JobFolderTabs notes={feedNotes} files={feedFiles} tasks={taskItems} isAdmin={isAdmin} />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+    <JobWorkspace
+      isAdmin={isAdmin}
+      job={{
+        id: job.id,
+        title: job.title,
+        status: job.status,
+        priority: job.priority,
+        targetCompletionDate: job.targetCompletionDate?.toISOString() ?? null,
+        customerName: job.customerName,
+        address: job.address,
+        contactName: job.contactName,
+        contactPhone: job.contactPhone,
+        contactEmail: job.contactEmail,
+        jobNumber: job.jobNumber,
+        poNumber: job.poNumber,
+        contractNumber: job.contractNumber,
+        description: job.description,
+      }}
+      notes={feedNotes}
+      files={feedFiles}
+      tasks={taskItems}
+    />
   );
 }
