@@ -7,6 +7,11 @@ import { downloadR2Object, uploadR2Object } from "@/lib/r2";
 import { getFilePreviewInfo } from "@/lib/file-preview";
 import { flattenMarkupToPdf, type FlattenPinAttachment } from "@/lib/markup/flatten";
 import { serializeMark, type DbMarkRow } from "@/lib/markup/serialize";
+import { mapWithConcurrency } from "@/lib/async-pool";
+
+// Cap simultaneous pin-photo downloads so a pin-heavy document doesn't pull
+// dozens of images into memory at once during flattening.
+const PIN_ATTACHMENT_CONCURRENCY = 5;
 
 export type MarkupSourceFile = {
   id: string;
@@ -96,23 +101,20 @@ async function loadPinAttachments(rows: DbMarkRow[], companyId: string): Promise
     orderBy: { createdAt: "asc" },
   });
 
-  return Promise.all(
-    files
-      .filter((attachment) => attachment.markupMarkId)
-      .map(async (attachment) => {
-        let bytes: Uint8Array | undefined;
-        try {
-          bytes = await downloadR2Object(attachment.url);
-        } catch {
-          bytes = undefined;
-        }
-        return {
-          markId: attachment.markupMarkId!,
-          id: attachment.id,
-          filename: attachment.name?.trim() || attachment.originalName,
-          contentType: attachment.contentType,
-          bytes,
-        };
-      }),
-  );
+  const downloadable = files.filter((attachment) => attachment.markupMarkId);
+  return mapWithConcurrency(downloadable, PIN_ATTACHMENT_CONCURRENCY, async (attachment) => {
+    let bytes: Uint8Array | undefined;
+    try {
+      bytes = await downloadR2Object(attachment.url);
+    } catch {
+      bytes = undefined;
+    }
+    return {
+      markId: attachment.markupMarkId!,
+      id: attachment.id,
+      filename: attachment.name?.trim() || attachment.originalName,
+      contentType: attachment.contentType,
+      bytes,
+    };
+  });
 }

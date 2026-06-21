@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import prisma from "@/lib/prisma";
 import {
   accessErrorResponse,
@@ -8,6 +8,13 @@ import {
 import { isAccountManagerRole } from "@/lib/account-access";
 import { ExportJobPackageService, ExportOptions } from "@/lib/services/ExportJobPackageService";
 import { uploadR2Object } from "@/lib/r2";
+
+// Package compilation (download originals, generate/flatten markup PDFs, zip,
+// upload to R2) runs in an `after()` callback so it executes AFTER the 201
+// response is sent. On Vercel this extends the function lifetime via waitUntil
+// up to maxDuration — without it the instance is frozen once the response is
+// flushed and the work never runs (the original "stuck at PROCESSING" bug).
+export const maxDuration = 300;
 
 export async function POST(
   req: NextRequest,
@@ -64,8 +71,10 @@ export async function POST(
       },
     });
 
-    // Start background package compilation process asynchronously
-    (async () => {
+    // Start background package compilation process after the response is sent.
+    // `after` keeps the serverless function alive (via waitUntil) until this
+    // finishes or maxDuration is hit, and runs even if the handler returns.
+    after(async () => {
       try {
         // 1. Build manifest
         const manifest = await ExportJobPackageService.buildManifest(
@@ -107,7 +116,7 @@ export async function POST(
           },
         });
       }
-    })();
+    });
 
     return NextResponse.json(exportRecord, { status: 201 });
   } catch (error) {

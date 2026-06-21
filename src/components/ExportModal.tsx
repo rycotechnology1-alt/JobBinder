@@ -68,9 +68,13 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
     let attempts = 0;
     const interval = setInterval(async () => {
       attempts++;
-      if (attempts > 60) {
-        // 90 second timeout limit
-        setSubmitError("Export package preparation timed out. Please try again.");
+      if (attempts > 135) {
+        // ~337s window (135 × 2500ms) — comfortably beyond the 300s server budget.
+        // The export may still finish server-side after this, so we frame it as
+        // "still working" rather than a hard failure.
+        setSubmitError(
+          "This export is taking longer than expected and may still be finishing. Close this dialog and reopen it in a minute to grab the package.",
+        );
         setExportState("FAILED");
         clearInterval(interval);
         return;
@@ -94,7 +98,7 @@ export function ExportModal({ isOpen, onClose, jobId, jobTitle }: Props) {
       } catch (err) {
         console.error("Polling error:", err);
       }
-    }, 1500);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [exportState, activeExport, jobId]);

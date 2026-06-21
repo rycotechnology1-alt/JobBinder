@@ -6,6 +6,14 @@ import prisma from "@/lib/prisma";
 import { downloadR2Object } from "@/lib/r2";
 import { getFilePreviewInfo } from "@/lib/file-preview";
 import { ensureFileMarkupPdf, markupFilename } from "@/lib/markup/generate";
+import { mapWithConcurrency } from "@/lib/async-pool";
+
+// Caps on simultaneous heavy I/O during a single export so large jobs (many
+// files / marked-up docs) don't spike peak memory or saturate R2. Markup
+// generation is the heaviest per-item (download + flatten + upload), so its
+// cap is lower.
+const EXPORT_DOWNLOAD_CONCURRENCY = 5;
+const EXPORT_MARKUP_CONCURRENCY = 3;
 
 export type ExportOptions = {
   destination: "zip" | "share_link" | "google_drive" | "onedrive";
@@ -386,8 +394,10 @@ export class ExportJobPackageService {
 
     // 4. PROCESS MARKUPS — generate/fetch each flattened PDF and add it beside its original.
     if (markupCandidates.length > 0) {
-      const markupItems = await Promise.all(
-        markupCandidates.map(async (c) => {
+      const markupItems = await mapWithConcurrency(
+        markupCandidates,
+        EXPORT_MARKUP_CONCURRENCY,
+        async (c) => {
           try {
             const res = await ensureFileMarkupPdf({ file: c.file, companyId });
             if (!res) return null;
@@ -409,7 +419,7 @@ export class ExportJobPackageService {
             warnings.push(`- Markup for file ${c.file.id} could not be generated.\n  Reason: ${reason}`);
             return null;
           }
-        }),
+        },
       );
       for (const item of markupItems) {
         if (item) items.push(item);
@@ -1344,7 +1354,7 @@ export class ExportJobPackageService {
     // 2. DOWNLOAD AND INSERT R2 FILES IN PARALLEL WITH GRACEFUL ERROR HANDLING
     const filesToDownload = manifest.items.filter((item) => item.itemType === "FILE" && item.storageKey);
 
-    const downloadPromises = filesToDownload.map(async (item) => {
+    await mapWithConcurrency(filesToDownload, EXPORT_DOWNLOAD_CONCURRENCY, async (item) => {
       try {
         const buffer = await downloadR2Object(item.storageKey!);
         const zipPath = item.folderPath
@@ -1359,8 +1369,6 @@ export class ExportJobPackageService {
         );
       }
     });
-
-    await Promise.all(downloadPromises);
 
     // 3. WRITE WARNINGS FILE IF ANY OCCURRED
     if (manifest.warnings.length > 0) {
