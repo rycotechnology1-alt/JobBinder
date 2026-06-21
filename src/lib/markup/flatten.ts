@@ -1,14 +1,22 @@
 // Server-side flattening of marks onto the original document, producing a new
 // PDF (the "marked-up version"). The original file is never modified. Marks are
-// stored normalized, so geometry maps cleanly to pdf-lib page points here.
-//
-// Coordinate notes: PDF user space has a bottom-left origin (y up). For shapes
-// drawn with explicit centers/endpoints (ellipse, arrow, pin) we flip y with
-// `H - ny*H`. For path-based shapes (pen, cloud) we hand pdf-lib an SVG path in
-// top-left/pixel-like points and anchor it at (0, H); drawSvgPath's y-down
-// convention then lands each point at the right place.
+// stored normalized against the same top-left display viewport that pdf.js uses
+// in the preview. PDF export maps that display space back into each page's PDF
+// user space, accounting for crop boxes and /Rotate metadata.
 
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  concatTransformationMatrix,
+  degrees,
+  PDFDocument,
+  PDFName,
+  PDFNumber,
+  popGraphicsState,
+  pushGraphicsState,
+  StandardFonts,
+  rgb,
+  type PDFFont,
+  type PDFPage,
+} from "pdf-lib";
 import { buildArrowHead, buildCloudPath } from "./geometry";
 import type { Mark } from "./types";
 
@@ -29,6 +37,17 @@ export type FlattenPinAttachment = {
 };
 
 const INDEX_PAGE = { width: 612, height: 792 }; // US Letter
+const PIN_RADIUS = 13;
+
+type Matrix = [number, number, number, number, number, number];
+
+export type PdfPageDisplayTransform = {
+  width: number;
+  height: number;
+  rotation: number;
+  pdfToDisplay: Matrix;
+  displayToPdf: Matrix;
+};
 
 export async function flattenMarkupToPdf(input: FlattenInput): Promise<Uint8Array> {
   const marks = input.marks.filter((m) => !m.deletedAt);
@@ -78,8 +97,31 @@ function numberPins(marks: Mark[]): Map<string, number> {
   return map;
 }
 
+export function getPdfPageDisplayTransform(page: PDFPage): PdfPageDisplayTransform {
+  const cropBox = page.getCropBox();
+  const viewBox: [number, number, number, number] = [
+    cropBox.x,
+    cropBox.y,
+    cropBox.x + cropBox.width,
+    cropBox.y + cropBox.height,
+  ];
+  const pdfToDisplay = buildPdfjsViewportTransform(viewBox, normalizeRotation(page.getRotation().angle), getPageUserUnit(page));
+  return {
+    width: pdfToDisplay.width,
+    height: pdfToDisplay.height,
+    rotation: pdfToDisplay.rotation,
+    pdfToDisplay: pdfToDisplay.transform,
+    displayToPdf: invertMatrix(pdfToDisplay.transform),
+  };
+}
+
+export function displayPointToPdfPoint(transform: PdfPageDisplayTransform, point: { x: number; y: number }) {
+  return applyMatrix(transform.displayToPdf, point);
+}
+
 function drawMark(page: PDFPage, mark: Mark, font: PDFFont, pinNumber: number | undefined) {
-  const { width: W, height: H } = page.getSize();
+  const display = getPdfPageDisplayTransform(page);
+  const { width: W, height: H } = display;
   const color = hexColor(mark.style.color);
   const thickness = Math.max(0.5, mark.style.strokeWidth * Math.min(W, H));
   const opacity = mark.style.opacity;
@@ -87,51 +129,196 @@ function drawMark(page: PDFPage, mark: Mark, font: PDFFont, pinNumber: number | 
   switch (mark.kind) {
     case "PEN": {
       const d = mark.geometry.points
-        .map((p, i) => `${i === 0 ? "M" : "L"} ${(p.x * W).toFixed(2)} ${(p.y * H).toFixed(2)}`)
+        .map((p, i) => `${i === 0 ? "M" : "L"} ${(p.x * W).toFixed(2)} ${(-p.y * H).toFixed(2)}`)
         .join(" ");
-      page.drawSvgPath(d, { x: 0, y: H, borderColor: color, borderWidth: thickness, borderOpacity: opacity });
+      drawInDisplaySpace(page, display, () => {
+        page.drawSvgPath(d, { x: 0, y: 0, borderColor: color, borderWidth: thickness, borderOpacity: opacity });
+      });
       break;
     }
     case "CLOUD": {
-      const d = buildCloudPath({ x: mark.geometry.x * W, y: mark.geometry.y * H, w: mark.geometry.w * W, h: mark.geometry.h * H });
-      page.drawSvgPath(d, { x: 0, y: H, borderColor: color, borderWidth: thickness, borderOpacity: opacity });
+      const d = buildCloudPath({
+        x: mark.geometry.x * W,
+        y: -mark.geometry.y * H,
+        w: mark.geometry.w * W,
+        h: -mark.geometry.h * H,
+      });
+      drawInDisplaySpace(page, display, () => {
+        page.drawSvgPath(d, { x: 0, y: 0, borderColor: color, borderWidth: thickness, borderOpacity: opacity });
+      });
       break;
     }
     case "ELLIPSE": {
       const cx = (mark.geometry.x + mark.geometry.w / 2) * W;
-      const cyTop = (mark.geometry.y + mark.geometry.h / 2) * H;
-      page.drawEllipse({
-        x: cx,
-        y: H - cyTop,
-        xScale: (mark.geometry.w / 2) * W,
-        yScale: (mark.geometry.h / 2) * H,
-        borderColor: color,
-        borderWidth: thickness,
-        borderOpacity: opacity,
+      const cy = (mark.geometry.y + mark.geometry.h / 2) * H;
+      drawInDisplaySpace(page, display, () => {
+        page.drawEllipse({
+          x: cx,
+          y: cy,
+          xScale: (mark.geometry.w / 2) * W,
+          yScale: (mark.geometry.h / 2) * H,
+          borderColor: color,
+          borderWidth: thickness,
+          borderOpacity: opacity,
+        });
       });
       break;
     }
     case "ARROW": {
-      const from = { x: mark.geometry.x1 * W, y: H - mark.geometry.y1 * H };
-      const to = { x: mark.geometry.x2 * W, y: H - mark.geometry.y2 * H };
+      const from = { x: mark.geometry.x1 * W, y: mark.geometry.y1 * H };
+      const to = { x: mark.geometry.x2 * W, y: mark.geometry.y2 * H };
       const head = buildArrowHead(from, to, { size: Math.max(8, thickness * 3.5) });
-      page.drawLine({ start: from, end: to, thickness, color, opacity });
-      page.drawLine({ start: head.left, end: to, thickness, color, opacity });
-      page.drawLine({ start: head.right, end: to, thickness, color, opacity });
+      drawInDisplaySpace(page, display, () => {
+        page.drawLine({ start: from, end: to, thickness, color, opacity });
+        page.drawLine({ start: head.left, end: to, thickness, color, opacity });
+        page.drawLine({ start: head.right, end: to, thickness, color, opacity });
+      });
       break;
     }
     case "PIN": {
       const x = mark.geometry.x * W;
-      const y = H - mark.geometry.y * H;
-      const radius = 10;
-      page.drawCircle({ x, y, size: radius, color, opacity });
+      const y = mark.geometry.y * H;
+      drawInDisplaySpace(page, display, () => {
+        page.drawSvgPath(pinTailPath({ x, y }), { x: 0, y: 0, color, opacity });
+        page.drawCircle({ x, y: y - PIN_RADIUS, size: PIN_RADIUS, color, opacity });
+      });
       const label = String(pinNumber ?? "");
       const size = 11;
+      const center = { x, y: y - PIN_RADIUS };
       const textWidth = font.widthOfTextAtSize(label, size);
-      page.drawText(label, { x: x - textWidth / 2, y: y - size / 2.8, size, font, color: rgb(1, 1, 1) });
+      const origin = displayPointToPdfPoint(display, { x: center.x - textWidth / 2, y: center.y + size / 2.8 });
+      page.drawText(label, {
+        x: origin.x,
+        y: origin.y,
+        size,
+        font,
+        color: rgb(1, 1, 1),
+        rotate: degrees((360 - display.rotation) % 360),
+      });
       break;
     }
   }
+}
+
+function drawInDisplaySpace(page: PDFPage, display: PdfPageDisplayTransform, draw: () => void) {
+  page.pushOperators(pushGraphicsState(), concatTransformationMatrix(...display.displayToPdf));
+  try {
+    draw();
+  } finally {
+    page.pushOperators(popGraphicsState());
+  }
+}
+
+function pinTailPath(point: { x: number; y: number }) {
+  return [
+    `M ${round(point.x)} ${round(-point.y)}`,
+    `L ${round(point.x - PIN_RADIUS * 0.7)} ${round(-(point.y - PIN_RADIUS))}`,
+    `L ${round(point.x + PIN_RADIUS * 0.7)} ${round(-(point.y - PIN_RADIUS))}`,
+    "Z",
+  ].join(" ");
+}
+
+function buildPdfjsViewportTransform(viewBox: [number, number, number, number], rotation: number, userUnit: number) {
+  const scale = userUnit;
+  const centerX = (viewBox[2] + viewBox[0]) / 2;
+  const centerY = (viewBox[3] + viewBox[1]) / 2;
+  let rotateA: number;
+  let rotateB: number;
+  let rotateC: number;
+  let rotateD: number;
+
+  switch (rotation) {
+    case 180:
+      rotateA = -1;
+      rotateB = 0;
+      rotateC = 0;
+      rotateD = 1;
+      break;
+    case 90:
+      rotateA = 0;
+      rotateB = 1;
+      rotateC = 1;
+      rotateD = 0;
+      break;
+    case 270:
+      rotateA = 0;
+      rotateB = -1;
+      rotateC = -1;
+      rotateD = 0;
+      break;
+    case 0:
+      rotateA = 1;
+      rotateB = 0;
+      rotateC = 0;
+      rotateD = -1;
+      break;
+    default:
+      throw new Error("PDF page rotation must be a multiple of 90 degrees.");
+  }
+
+  let offsetCanvasX: number;
+  let offsetCanvasY: number;
+  let width: number;
+  let height: number;
+  if (rotateA === 0) {
+    offsetCanvasX = Math.abs(centerY - viewBox[1]) * scale;
+    offsetCanvasY = Math.abs(centerX - viewBox[0]) * scale;
+    width = (viewBox[3] - viewBox[1]) * scale;
+    height = (viewBox[2] - viewBox[0]) * scale;
+  } else {
+    offsetCanvasX = Math.abs(centerX - viewBox[0]) * scale;
+    offsetCanvasY = Math.abs(centerY - viewBox[1]) * scale;
+    width = (viewBox[2] - viewBox[0]) * scale;
+    height = (viewBox[3] - viewBox[1]) * scale;
+  }
+
+  const transform: Matrix = [
+    rotateA * scale,
+    rotateB * scale,
+    rotateC * scale,
+    rotateD * scale,
+    offsetCanvasX - rotateA * scale * centerX - rotateC * scale * centerY,
+    offsetCanvasY - rotateB * scale * centerX - rotateD * scale * centerY,
+  ];
+
+  return { width, height, rotation, transform };
+}
+
+function getPageUserUnit(page: PDFPage): number {
+  const userUnit = page.node.getInheritableAttribute(PDFName.of("UserUnit"));
+  if (userUnit instanceof PDFNumber) return userUnit.asNumber();
+  return 1;
+}
+
+function normalizeRotation(rotation: number): number {
+  const normalized = rotation % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+}
+
+function invertMatrix(matrix: Matrix): Matrix {
+  const [a, b, c, d, e, f] = matrix;
+  const determinant = a * d - b * c;
+  if (determinant === 0) throw new Error("PDF page display transform is not invertible.");
+  return [
+    d / determinant,
+    -b / determinant,
+    -c / determinant,
+    a / determinant,
+    (c * f - d * e) / determinant,
+    (b * e - a * f) / determinant,
+  ];
+}
+
+function applyMatrix(matrix: Matrix, point: { x: number; y: number }) {
+  const [a, b, c, d, e, f] = matrix;
+  return {
+    x: a * point.x + c * point.y + e,
+    y: b * point.x + d * point.y + f,
+  };
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 async function drawCommentIndex(

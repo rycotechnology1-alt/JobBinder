@@ -2,8 +2,8 @@
 //
 // All mark geometry is stored in NORMALIZED coordinates (0..1 of the page
 // width/height). This keeps marks independent of the render scale: they map
-// cleanly onto the SVG overlay at any zoom and convert directly to pdf-lib
-// page points when flattening (see lib/markup/geometry.ts).
+// cleanly onto the SVG overlay at any zoom and into the flattened PDF's
+// pdf.js-compatible display viewport.
 
 export type MarkKind = "PEN" | "ELLIPSE" | "ARROW" | "CLOUD" | "PIN";
 

@@ -16,6 +16,8 @@ export type MarkupSourceFile = {
   contentType: string | null;
 };
 
+const MARKUP_EXPORT_VERSION = 2;
+
 export function markupFilename(displayName: string | null, originalName: string) {
   const base = (displayName?.trim() || originalName).replace(/\.[A-Za-z0-9]{1,10}$/, "");
   return `${base} (marked up).pdf`;
@@ -38,8 +40,9 @@ export async function ensureFileMarkupPdf(params: {
     return null;
   }
 
+  const storageKey = markupStorageKey(companyId, file.id);
   const cached = await prisma.fileMarkupExport.findUnique({ where: { fileId: file.id } });
-  if (cached && !cached.isStale && cached.storageKey) {
+  if (cached && !cached.isStale && cached.storageKey === storageKey) {
     return { storageKey: cached.storageKey };
   }
 
@@ -58,7 +61,6 @@ export async function ensureFileMarkupPdf(params: {
     pinAttachments,
   });
 
-  const storageKey = `${companyId}/${file.id}-markup.pdf`;
   await uploadR2Object(storageKey, pdfBytes, "application/pdf");
   await prisma.fileMarkupExport.upsert({
     where: { fileId: file.id },
@@ -67,6 +69,10 @@ export async function ensureFileMarkupPdf(params: {
   });
 
   return { storageKey };
+}
+
+function markupStorageKey(companyId: string, fileId: string) {
+  return `${companyId}/${fileId}-markup-v${MARKUP_EXPORT_VERSION}.pdf`;
 }
 
 async function loadPinAttachments(rows: DbMarkRow[], companyId: string): Promise<FlattenPinAttachment[]> {

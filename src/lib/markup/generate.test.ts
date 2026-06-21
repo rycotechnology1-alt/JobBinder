@@ -102,4 +102,54 @@ describe("ensureFileMarkupPdf", () => {
       }),
     );
   });
+
+  it("reuses a fresh v2 cached flattened PDF", async () => {
+    const { ensureFileMarkupPdf } = await import("./generate");
+    prismaMocks.fileMarkupExportFindUnique.mockResolvedValue({
+      isStale: false,
+      storageKey: "company-1/file-1-markup-v2.pdf",
+    });
+
+    const result = await ensureFileMarkupPdf({
+      file: {
+        id: "file-1",
+        url: "company/file.pdf",
+        originalName: "Plan.pdf",
+        name: null,
+        contentType: "application/pdf",
+      },
+      companyId: "company-1",
+    });
+
+    expect(result).toEqual({ storageKey: "company-1/file-1-markup-v2.pdf" });
+    expect(r2Mocks.downloadR2Object).not.toHaveBeenCalled();
+    expect(flattenMarkupToPdf).not.toHaveBeenCalled();
+    expect(r2Mocks.uploadR2Object).not.toHaveBeenCalled();
+  });
+
+  it("regenerates a non-stale cached flattened PDF that uses the old cache key", async () => {
+    const { ensureFileMarkupPdf } = await import("./generate");
+    prismaMocks.fileMarkupExportFindUnique.mockResolvedValue({
+      isStale: false,
+      storageKey: "company-1/file-1-markup.pdf",
+    });
+    prismaMocks.fileMarkupMarkFindMany.mockResolvedValue([]);
+    prismaMocks.fileFindMany.mockResolvedValue([]);
+
+    const result = await ensureFileMarkupPdf({
+      file: {
+        id: "file-1",
+        url: "company/file.pdf",
+        originalName: "Plan.pdf",
+        name: null,
+        contentType: "application/pdf",
+      },
+      companyId: "company-1",
+    });
+
+    expect(result).toEqual({ storageKey: "company-1/file-1-markup-v2.pdf" });
+    expect(r2Mocks.downloadR2Object).toHaveBeenCalledWith("company/file.pdf");
+    expect(flattenMarkupToPdf).toHaveBeenCalled();
+    expect(r2Mocks.uploadR2Object).toHaveBeenCalledWith("company-1/file-1-markup-v2.pdf", new Uint8Array([9, 9, 9]), "application/pdf");
+  });
 });
