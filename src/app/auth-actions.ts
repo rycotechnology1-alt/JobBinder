@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
+import prisma from "@/lib/prisma";
 import {
   acceptCompanyInvite,
   createCompanyAdminAccount,
@@ -9,7 +10,7 @@ import {
   resetPasswordWithToken,
   sendEmailVerificationForUser,
 } from "@/lib/account-auth";
-import { normalizeAuthEmail } from "@/lib/auth-rules";
+import { getPostSignInPath, normalizeAuthEmail } from "@/lib/auth-rules";
 
 export type AuthFormState = {
   message?: string;
@@ -24,6 +25,25 @@ function getString(formData: FormData, key: string) {
 
 function hasAuthError(url: string) {
   return new URL(url, "http://localhost").searchParams.has("error");
+}
+
+async function getFreshPostSignInPath(email: string) {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      emailVerified: true,
+      memberships: {
+        where: { status: "ACTIVE" },
+        orderBy: { joinedAt: "asc" },
+        select: { companyId: true },
+      },
+    },
+  });
+
+  return getPostSignInPath({
+    companyId: user?.memberships[0]?.companyId ?? null,
+    emailVerified: user?.emailVerified ?? null,
+  });
 }
 
 export async function signupCompanyAdmin(
@@ -75,7 +95,7 @@ export async function signInWithPassword(
     };
   }
 
-  redirect(redirectUrl);
+  redirect(await getFreshPostSignInPath(email));
 }
 
 export async function resendVerificationEmailAction(
