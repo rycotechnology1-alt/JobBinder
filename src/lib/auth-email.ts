@@ -10,6 +10,12 @@ type InviteEmailInput = AuthEmailInput & {
   companyName: string;
 };
 
+const OFFICIAL_APP_BASE_URL = "https://jobbinderapp.com";
+const MISSING_PRODUCTION_APP_URL_MESSAGE =
+  "Set AUTH_URL=https://jobbinderapp.com in production before sending auth emails.";
+const INVALID_PRODUCTION_APP_URL_MESSAGE =
+  "Auth email links must use https://jobbinderapp.com in production.";
+
 function getResendClient() {
   const apiKey = process.env.AUTH_RESEND_KEY ?? process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -24,9 +30,22 @@ function getEmailFrom() {
 }
 
 function getAppBaseUrl() {
-  if (process.env.AUTH_URL) return process.env.AUTH_URL;
-  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  const configuredUrl = process.env.AUTH_URL?.trim() || process.env.NEXTAUTH_URL?.trim();
+
+  if (process.env.NODE_ENV === "production") {
+    if (!configuredUrl) {
+      throw new Error(MISSING_PRODUCTION_APP_URL_MESSAGE);
+    }
+
+    const baseUrl = new URL(configuredUrl);
+    if (baseUrl.origin !== OFFICIAL_APP_BASE_URL) {
+      throw new Error(INVALID_PRODUCTION_APP_URL_MESSAGE);
+    }
+
+    return OFFICIAL_APP_BASE_URL;
+  }
+
+  if (configuredUrl) return configuredUrl;
   return "http://localhost:3000";
 }
 

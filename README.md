@@ -44,7 +44,7 @@ As of the completion of the MVP 8-Step Roadmap, here is the exact state of the r
    ```
 
 2. **Environment Variables:**
-   Rename `.env.example` to `.env` and fill in your Neon Database URL, Cloudflare R2 credentials, `AUTH_SECRET`, and Resend API key (`AUTH_RESEND_KEY` or `RESEND_API_KEY`).
+   Rename `.env.example` to `.env` and fill in your Neon Database URL, Cloudflare R2 credentials, `AUTH_SECRET`, and Resend API key (`AUTH_RESEND_KEY` or `RESEND_API_KEY`). Production email links require `AUTH_URL=https://jobbinderapp.com`; `NEXTAUTH_URL` is supported as a legacy alias, but `AUTH_URL` is preferred.
 
 3. **Database Migrations:**
    Apply committed migrations to your database and generate the Prisma Client:
